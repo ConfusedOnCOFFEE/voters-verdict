@@ -1,0 +1,3 @@
+[toolchain]
+components = [ "rustfmt", "clippy", "rust-docs", "llvm-tools-preview", "rust-src"]
+channel = "stable"

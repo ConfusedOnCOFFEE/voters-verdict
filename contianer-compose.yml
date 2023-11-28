@@ -1,0 +1,27 @@
+version: '2'
+services:
+  voters-verdict:
+    image: concafe/voters-verdict:machine-prod
+    environment:
+      - VOTERS_VERDICT_ADMIN_TOKEN=changepassword
+      - VOTERS_VERDICT_MAINTAINER_TOKEN=changepassword
+      - VOTERS_VERDICT_FILE_DIR=/usr/src/myapp/bucket/
+      - VOTERS_VERDICT_ASSET_DIR=/usr/src/myapp/static/
+      # - VOTERS_VERDICT_SELF_CERT=
+      # - VOTERS_VERDICT_STORAGE_MODE=
+      # - VOTERS_VERDICT_REMOTE_STORAGE=
+      # - VOTERS_VERDICT_REMOTE_CREDENTIALS=
+      # - VOTERS_VERDICT_REMOTE_AUTH=
+      # - VOTERS_VERDICT_DEFAULT_VOTE_RUNNING=
+    build:
+      dockerfile: Containerfile
+      args:
+        - TARGET=x86_64
+        - DATE_DEPLOY=
+    container_name: voters-verdict
+    restart: always
+    volumes:
+      # Mount prefilled data. The target path is VOTERS_VERDICT_FILE_DIR
+     - ./prefilled:/usr/src/myapp/bucket
+    ports:
+      - 9999:9999

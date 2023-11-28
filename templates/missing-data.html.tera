@@ -1,0 +1,18 @@
+{% import "macros" as m %}
+
+<!doctype html>
+<html lang="en">
+    <head>
+        {% include "styles" %}
+        <title>Not found for {{ name }}</title>
+    </head>
+    <body class="{{ name }}">
+        <h1>Stats from {{ name }} for {{ user }}</h1>
+        {% if candidate %}
+        <p>No user has giving a vote for this candidate. :(</p>
+        {% else %}
+        <p>The user hasn't voted.</p>
+        {% endif %}
+        <p>Please go voting!</p>
+    </body>
+</html>

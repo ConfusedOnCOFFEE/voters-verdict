@@ -1,0 +1,38 @@
+[package]
+name = "voters-verdict"
+version = "0.1.1"
+include = [
+  "src/**/*",
+  "Cargo.toml",
+  "LICENSE*",
+  "README.md",
+]
+description = "A Rocket powered server, which allows to create votings."
+readme = "README.md"
+keywords = ["playwright", "voting", "tables", "ssr", "rocket" ]
+authors = ["ConfusedOnCOFFEE <me@confusedoncoffee.com>"]
+repository = "https://git.confusedoncoffee.com/confusedoncoffee/voters-verdict"
+license = "MIT OR Apache-2.0"
+rust-version = "1.74"
+edition = "2021"
+homepage = "https://git.confusedoncoffee.com/confusedoncoffee/voters-verdict"
+
+[[bin]]
+path = "src/bin/main.rs"
+name = "voters-verdict-machine"
+
+[features]
+templates = [ "rocket_dyn_templates" ]
+
+[dependencies]
+rocket = { version = "0.5.0", features = [ "json"] }
+tokio = { version = "1.31.0" , features = [ "fs" ] }
+reqwest = { version = "0.11", features = [ "json" ] }
+chrono = { version = "0.4.25", features = [ "serde" ] }
+tracing = "0.1.40"
+tracing-subscriber = "0.3.0"
+regex = "1.10.2"
+log = "0.4.20" # lib
+env_logger = "0.10.1" # binaries
+futures = { version = "0.3.29" }
+rocket_dyn_templates = { version = "0.1.0", features = ["tera"], optional = true }

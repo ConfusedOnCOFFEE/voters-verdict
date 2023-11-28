@@ -1,0 +1,126 @@
+body {
+    font-size: 30pt;
+}
+form {
+    display: grid;
+}
+
+fieldset {
+    display: grid;
+}
+h1 {
+    text-align: center;
+    font-size: 36px;
+}
+h2 {
+    font-size: 34px;
+}
+h3 {
+    font-size: 32px;
+}
+li:hover {
+    cursor: pointer;
+}
+input:invalid {
+    border: .2vw solid red;
+}
+
+input:valid {
+    border: .2vw solid black;
+}
+a,
+label {
+    margin-top: 15px;
+    margin-bottom: 5px;
+}
+label,
+input{
+    font-size: small;
+}
+button {
+    margin-top: 5px;
+    color: white;
+    background-color: grey;
+}
+a {
+    color: white;
+    font-size: 30px;
+    justify-self: center;
+}
+@media (max-width: 400px) {
+    body {
+        font-size: 16pt;
+    }
+    h1 {
+        font-size: 22pt;
+    }
+    h2 {
+        font-size: 20pt;
+    }
+    h3 {
+        font-size: 18pt;
+    }
+    label,
+    select,
+    input,
+    button {
+        font-size: smaller;
+    }
+    a {
+        font-size: smaller;
+    }
+}
+
+@media (max-width: 800px) {
+    body {
+        font-size: 18pt;
+    }
+    h1 {
+        font-size: 24pt;
+    }
+    h2 {
+        font-size: 22pt;
+    }
+    h3 {
+        font-size: 20pt;
+    }
+    label,
+    select,
+    input,
+    button {
+        font-size: 12px;
+    }
+    a {
+        font-size: smaller;
+    }
+
+}
+@media (max-width: 1000px) {
+    body {
+        font-size: 16pt;
+    }
+    h1 {
+        font-size: 22pt;
+    }
+    h2 {
+        font-size: 20pt;
+    }
+    h3 {
+        font-size: 18pt;
+    }
+    label,
+    select,
+    input {
+        font-size: 14pt;
+    }
+    a {
+        color: white;
+        font-size: 20px;
+    }
+    li:hover {
+        cursor: pointer;
+    }
+    a {
+        font-size: small;
+    }
+}

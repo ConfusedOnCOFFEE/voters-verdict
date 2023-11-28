@@ -1,0 +1,25 @@
+{
+  "voting": "Voting",
+  "ballots": [
+    {
+      "voter": "Michelle",
+      "ballots": [
+        {
+          "candidate": "Joe",
+          "votes": [
+            {
+              "name": "Style",
+              "point": 7
+            },
+            {
+              "name": "Weather",
+              "point": 7
+            }
+          ],
+          "notes": "Super style",
+          "voted_on": "2023-11-24T16:31:52.200140786Z"
+        }
+      ]
+    }
+  ]
+}

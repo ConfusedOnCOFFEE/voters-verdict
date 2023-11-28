@@ -1,0 +1,14 @@
+{% import "macros" as m %}
+
+<!doctype html>
+<html lang="en">
+    <head>
+        {% include "styles" %}
+        <title>Error</title>
+    </head>
+    <body class="default">
+      <h1>Error</h1>
+      <p>{{ reason }}</p>
+      <a href="/">Back</a>
+    </body>
+</html>

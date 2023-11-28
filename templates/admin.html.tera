@@ -1,0 +1,142 @@
+{% import "macros" as m %}
+<!doctype html>
+<html lang="en">
+    <head>
+        {% include "styles" %}
+        <title>Admin panel</title>
+    </head>
+    <body class="admin">
+        <h1>Admin Panel</h1>
+        <h2>Create new votes, criterias, users, color</h2>
+        <h3>Add Criteria</h3>
+        <form
+            data-route="{{ criteria_route }}"
+            id="criteria-form"
+            name="criteria"
+            method="post"
+        >
+            {{ m::validatedInput(label="Name", id="criteria-name", type="text", required=true, color=default_styles) }}
+            <fieldset>
+                <label for="criteria-minimum" value="criteria-minimum">
+                    Minimum points
+                </label>
+                <select id="criteria-minimum" required>
+                    {% for i in range(start=0, end=101) %}
+                    <option value="{{ i }}">{{ i }}</option>
+                    {% endfor %}
+                </select>
+            </fieldset>
+            <fieldset>
+                <label for="criteria-maximum" value="criteria-maximum">
+                    Maximum points
+                </label>
+                <select id="criteria-maximum" required>
+                    {% for i in range(start=0, end=101) %}
+                    <option value="{{ i }}">{{ i }}</option>
+                    {% endfor %}
+                </select>
+            </fieldset>
+            <fieldset>
+                <label for="criteria-weight" value="criteria-weight">
+                    Weight in percentage
+                </label>
+                <select id="criteria-weight" required>
+                    {% for i in range(start=1, end=105,step_by=5) %}
+                    <option value="{{ i-1 }}">{{ i-1 }}</option>
+                    {% endfor %}
+                </select>
+            </fieldset>
+            <button>Create criteria</button>
+        </form>
+        <h3>Add user</h3>
+        <form
+            data-route="{{ users_route }}"
+            id="user-form"
+            name="users"
+            method="post"
+        >
+            {{ m::validatedInput(label="Name", id="user-name", type="text", required=true, color=default_styles) }}
+            <fieldset>
+                <label for="user-type" value="user-type">User type</label>
+                <select name="user-type" id="user-type">
+                    <option value="candidate">Candidate</option>
+                    <option value="voter">Voter</option>
+                </select>
+            </fieldset>
+            <button>Create user</button>
+        </form>
+        <h3>Add voting</h3>
+        <form
+            data-route="{{ votings_route }}"
+            id="voting-form"
+            name="voting"
+            method="post"
+        >
+            {{ m::validatedInput(label="Name", id="voting-id", type="text", required=true, color=default_styles) }}
+            {% if criterias | length > 0 %}
+            {{ m::checkbox(label="Criterias", id_prefix="voting-criteria", entries=criterias, color=default_styles, format=true) }}
+            {% else %}
+            <p style="color: red; font-size: 20px">
+                Please create criterias first to create a new vote!!
+            </p>
+            {% endif %}
+            {% if candidates | length > 0 %}
+            {{ m::checkbox(label="Candidate", id_prefix="voting-candidates", entries=candidates, color=default_styles) }}
+            {% else %}
+            <p style="color: red; font-size: 20px">
+                Please create candidates first to create a new vote!!
+            </p>
+            {% endif %}
+            {{ m::date(label="Ends on", id="ends", color=default_styles) }}
+            <fieldset style="margin-bottom: 1%;">
+                <label>
+                    Invite code
+                </label>
+                <input
+                    style="background-color:{{default_styles.fields}};color:{{default_styles.selection}}"
+                    pattern="[a-zA-Z]{1}[a-zA-Z0-9]{4}"
+                    max-length="5"
+                    required
+                  id="voting-invite" type="text" />
+                <p style="font-size: 14px">Pattern: [a-zA-Z]{1}[a-zA-Z0-9]{4}</p>
+            </fieldset>
+            <fieldset>
+                <label>Background color</label>
+                <input style="marggin: unset; padding: unset;" type="color" value="#30363d" id="voting-color-bg"/>
+            </fieldset>
+            <fieldset>
+                <label>Font color</label>
+                <input style="marggin: unset; padding: unset;" type="color" value="#ff0000" id="voting-color-font"/>
+            </fieldset>
+            <fieldset>
+                <label>Field font color</label>
+                <input style="marggin: unset; padding: unset;" type="color" value="#30363d" id="voting-field-font"/>
+            </fieldset>
+            <fieldset>
+                <label>Field background</label>
+                <input style="marggin: unset; padding: unset;" type="color" value="#ff0000" id="voting-field-bg"/>
+            </fieldset>
+            <button>Create voting</button>
+        </form>
+        <div style="scale: 0.7;" id="template-test-visualiser">
+            <h1> Example of the color picked </h1>
+            <fieldset>
+                <label for="input-test">
+                    Input Test
+                </label>
+                <input id="input-test" required/>
+            </fieldset>
+            <fieldset>
+                <label for="criteria-test">
+                    Criteria Test
+                </label>
+                <select id="criteria-test" required>
+                    {% for i in range(start=0, end=100) %}
+                    <option value="{{ i }}">{{ i }}</option>
+                    {% endfor %}
+                </select>
+            </fieldset>
+        </div>
+        {% include "admin-scripts" %}
+    </body>
+</html>

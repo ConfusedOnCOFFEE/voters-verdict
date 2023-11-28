@@ -1,0 +1,38 @@
+{
+  "name": "Voting",
+  "expires_at": "2023-12-22T16:31:19.745Z",
+  "created_at": "2023-11-24T16:31:19.751587849Z",
+  "candidates": [
+    {
+      "voter": false,
+      "id": "candidate_doe",
+      "label": "Doe"
+    },
+    {
+      "voter": false,
+      "id": "candidate_joe",
+      "label": "Joe"
+    }
+  ],
+  "categories": [
+    {
+      "name": "Style",
+      "min": 0,
+      "max": 10,
+      "weight": 15.0
+    },
+    {
+      "name": "Weather",
+      "min": 0,
+      "max": 15,
+      "weight": 15.0
+    }
+  ],
+  "styles": {
+    "background": "#33d17a",
+    "font": "#613583",
+    "selection": "#deddda",
+    "fields": "#77767b"
+  },
+  "invite_code": "W1234"
+}

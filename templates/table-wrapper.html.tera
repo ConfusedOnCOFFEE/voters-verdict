@@ -1,0 +1,32 @@
+{% import "macros" as m %}
+<!doctype html>
+<html lang="en">
+  <head>
+    {% block head %}
+    {% include "meta" %}
+    <title>Stats {% block title %}{% endblock title %}</title>
+    {% include "table-styles" %}
+    {% endblock head %}
+  </head>
+  <body class="{{ voting.name }}" style="background-color: {{ voting.styles.background }}; display:grid;color: {{ voting.styles.font }};">
+    {% block headline %}
+    <h1>{% block bodyTitle %}{% endblock bodyTitle %}</h1>
+    {% endblock headline %}
+    <div style="justify-content: center;overflow-x:auto;">
+      <table style="background-color: {{ voting.styles.background }}; color: {{ voting.styles.font }};">
+        <tr>
+          {% block prefixTableHeaders %} {% endblock prefixTableHeaders %}
+          {{ m::tds(data=voting.categories, type='th') }}
+          {% block extendedTableHeaders %} {% endblock extendedTableHeaders %}
+          <th>sum</th>
+          <th>weighted</th>
+          <th>mean</th>
+          <th>note</th>
+          <th>voted</th>
+        </tr>
+        {% block extendedTableCells %} {% endblock extendedTableCells %}
+      </table>
+    </div>
+
+  </body>
+</html>

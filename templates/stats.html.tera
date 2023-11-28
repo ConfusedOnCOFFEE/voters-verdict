@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <link rel="stylesheet" href="/static/styles.css" />
+        <link rel="stylesheet" href="/static/voting-colors.css" />
+        <title>Stats for {{ name }}</title>
+    </head>
+    <body>
+        <h1>Statistiken für {{ name }}</h1>
+        <table>
+            <tr>
+                {% for c in header %}
+                <th>{{ c.name }}</th>
+                {% endfor %}
+            </tr>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.name }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </body>
+</html>

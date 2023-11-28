@@ -1,0 +1,44 @@
+{% extends "table-wrapper" %}
+{% block title %}
+{{ voting.name }} by {{ filter }}
+{% endblock title %}
+{% block bodyTitle %}
+{% if requested_col == "voter" %}
+User
+{% else %}
+Candidate
+{% endif %}
+stats for {{ voting.name }} filtered by {{ filter }}
+{% endblock bodyTitle %}
+{% block head %}
+{{ super() }}
+{% endblock head %}
+{% block prefixTableHeaders %}
+<th>
+    {% if requested_col == "voter" %}
+    voter
+    {% else %}
+    candidate
+    {% endif %}
+</th>
+{% endblock prefixTableHeaders %}
+{% block extendedTableCells %}
+{% for b in ballots | reverse %}
+<tr>
+    {% if requested_col == "voter" %}
+    <td>{{ b.voter }}</td>
+    {% else %}
+    <td>{{ b.candidate }}</td>
+    {% endif %}
+    {{ m::tds(data=b.votes, key="point") }}
+    <td>{{ b.sum }}</td>
+    <td>{{ b.weighted | round(method="ceil", precision=4)}}</td>
+    <td>{{ b.mean | round(method="ceil", precision=4)}}</td>
+    <td>{{ b.notes }}</td>
+    <td>
+        {{ b.voted_on | date(format="%d.%m.%Y (%H:%M)",
+        timezone="Europe/Berlin")}}
+    </td>
+</tr>
+{% endfor %}
+{% endblock extendedTableCells %}

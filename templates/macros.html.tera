@@ -1,0 +1,115 @@
+{% macro input(label, id="name", type="text", color) %}
+<fieldset>
+  <label>
+    {{ label | title }}
+  </label>
+  <input
+    style="background-color:{{color.fields}};color:{{color.selection}}"
+    max-length="23"
+    pattern="[a-zA-Z0-9\.< >\)\(\!\?]+"
+    id="{{id}}"
+    type="{{type}}" />
+  <p style="font-size: 10px">Pattern: [a-zA-Z0-9\.< >\)\(\!\?]+</p>
+</fieldset>
+{% endmacro %}
+
+{% macro validatedInput(label, id="name", type="text", required=false, color) %}
+<fieldset style="margin-bottom: 10px;">
+  <label>
+    {{ label | title }}
+  </label>
+  {% if required %}
+  <input
+    style="background-color:{{color.fields}};color:{{color.selection}}"
+    pattern="[a-zA-Z0-9\.\!-\?]+"
+    max-length="23"
+    required
+    id="{{id}}" type="{{type}}" />
+  {% else %}
+  <input
+    style="background-color:{{color.fields}};color:{{color.selection}}"
+    pattern="[a-zA-Z0-9\.\!-\?]+"
+    max-length="23"
+    id="{{id}}"
+    type="{{type}}" />
+  {% endif %}
+  <p style="font-size: 10px">Pattern: [a-zA-Z0-9\.\!-\?]+</p>
+</fieldset>
+{% endmacro %}
+
+{% macro select(label, name, options, key=false, color) %}
+<fieldset style="margin-bottom: 10px;">
+  <label for="{{ name }}" value="{{ name }}">{{ label }}</label>
+  <select
+    style="background-color:{{color.fields}};color:{{color.selection}}"
+    name="{{ name }}"
+    id="{{ name }}">
+    {% for value in options %}
+    {% if key %}
+    <option value="{{ value.id }}">{{ value.label | upper }}</option>
+    {% else %}
+    <option value="{{ value }}">{{ value | upper }}</option>
+    {% endif %}
+
+    {% endfor %}
+  </select>
+</fieldset>
+{% endmacro input %}
+
+{% macro headers(h) %}
+<tr>
+  {% for c in h %}
+  <th>{{ c.name | upper }}</th>
+  {% endfor %}
+</tr>
+{% endmacro %}
+
+{% macro row(data) %}
+<tr>
+  {% for c in data %}
+  <td>{{ c.point}}</td>
+  {% endfor %}
+</tr>
+{% endmacro %}
+
+{% macro tds(data, type="td", key="name") %}
+{% for c in data %}
+{% if c is string %}
+<{{ type | as_str }} >{{ c[key] | upper }}</{{ type | as_str }}>
+{% else %}
+<{{ type | as_str }} >{{ c[key] }}</{{ type | as_str }}>
+{% endif %}
+{% endfor %}
+{% endmacro %}
+
+
+{% macro date(label, id="date-id", color)%}
+<fieldset>
+  <label>
+    {{ label }}
+  </label>
+  <input
+    style="background-color:{{color.fields}};color:{{color.selection}}"
+    id="{{id}}"
+    required
+    type="date" />
+</fieldset>
+{% endmacro %}
+
+{% macro checkbox(label, id_prefix, entries, color, format=false)%}
+<fieldset id="{{ id_prefix }}" style="display: grid;">
+  <label>{{ label }} </label>
+  {% for e in entries | sort %}
+  <div style="display: flex;width: 80%;">
+    <input rquired style="margin: 0 2vw 0 0;" type="checkbox" id="{{ id_prefix }}-{{ e }}" name="{{ e }}" value="{{ e }} ">
+    <label style="margin-left: unset;" for="{{ id_prefix }}-{{ e }}">
+      {% if format %}
+      {{ e | upper | format_criteria }}
+      {% else %}
+      {{ e | upper }}
+      {% endif %}
+    </label>
+  </div>
+  {% endfor %}
+</fieldset>
+{% endmacro %}

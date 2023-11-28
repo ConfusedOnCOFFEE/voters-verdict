@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {% include "meta" %}
+    {% include "styles" %}
+    <title>Available votings</title>
+  </head>
+  <body class="landing">
+    {% if votings | length != 0 %}
+    <h1 style="font-size: 30px;">Possible votings</h1>
+    <div style="display: flex;margin-top:20px;">
+      <label style="align-self: last baseline;padding-right: 10px;" for="invite-code">Invite code:</label>
+      <input
+        style="height: 100xp;width:100px;"
+        required
+        for="invite-code"
+        id="invite-code"
+        type="text"
+        pattern="[a-zA-Z]{1}[0-9]+"
+        max-length="5"/>
+    </div>
+    <ul style="font-size: 22px;">
+      {% for v in votings | sort%}
+      <li id="{{v}}">{{ v | title }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p> Currently no votes are available. Go to the admin page and create one. </p>
+    <a href="/admin">Admin (requires token)</a>
+    {% endif %}
+  </body>
+  <script type="text/javascript">
+    let votings = document.querySelectorAll("li");
+    Array.from(votings).forEach((v) => {
+    v.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    let code = document.getElementById("invite-code").value;
+    if (code.length === 0) {
+    alert("Please provide a invite_code");
+    } else {
+    window.location.assign(
+    [ window.location.origin, "votings", event.target.id ].join("/") + "?invite_code=" + code)
+    }
+    });
+    });
+  </script>
+</html>

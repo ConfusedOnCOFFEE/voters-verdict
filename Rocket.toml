@@ -1,0 +1,17 @@
+[default]
+address = "0.0.0.0"
+limits = { form = "64 kB", json = "1 MiB" }
+ident = "voters-verdict-machine"
+id_header = "X-Real-IP"
+
+[debug]
+port = 8300
+## only the `json` key from `default` will be overridden; `form` will remain
+limits = { json = "2MiB" }
+
+## set only when compiled in release mode, i.e, `cargo build --release`
+[release]
+address = "0.0.0.0"
+port = 9999
+ip_header = false
+secret_key = "PLEASE CHANGE"

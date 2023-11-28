@@ -1,0 +1,34 @@
+{
+  "name": "e2e-ui",
+  "version": "1.0.0",
+  "description": "The E2E tests, which can be executed on voters-verdict-machine",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "playwright-core": "^1.40.0",
+    "prettier": "^3.1.0",
+    "undici-types": "^5.26.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.10.0"
+  },
+  "scripts": {
+    "prettify": "npx prettier --write .",
+    "e2e": "npx playwright test"
+  },
+  "keywords": [
+    "playwright",
+    "voting",
+    "tests",
+    "e2e",
+    "ballots",
+    "tables",
+    "ssr"
+  ],
+  "author": "ConfusedOnCOFFEE <me@confusedoncoffee.com>",
+  "license": "MIT OR APACHE"
+}

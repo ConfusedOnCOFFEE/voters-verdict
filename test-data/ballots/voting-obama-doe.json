@@ -1,0 +1,25 @@
+{
+  "voting": "Voting",
+  "ballots": [
+    {
+      "voter": "Obama",
+      "ballots": [
+        {
+          "candidate": "Doe",
+          "votes": [
+            {
+              "name": "Style",
+              "point": 5
+            },
+            {
+              "name": "Weather",
+              "point": 10
+            }
+          ],
+          "notes": "Nope",
+          "voted_on": "2023-11-24T16:31:28.352746225Z"
+        }
+      ]
+    }
+  ]
+}

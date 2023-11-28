@@ -1,0 +1,30 @@
+{% extends "table-wrapper" %}
+{% block title %}
+Voting stats for {{ voting.name }}
+{% endblock title %}
+{% block bodyTitle %}
+Voting stats for {{ voting.name }}
+{% endblock bodyTitle %}
+{% block head %}
+{{ super() }}
+{% endblock head %}
+{% block prefixTableHeaders %}
+<th>voter</th>
+<th>candidate</th>
+{% endblock prefixTableHeaders %}
+{% block extendedTableCells %}
+{% for b in ballots | reverse %}
+<tr>
+    <td>{{ b.candidate }}</td>
+    <td>{{ b.voter }}</td>
+    {{ m::tds(data=b.votes, key="point") }}
+    <td>{{ b.sum }} </td>
+    <td>{{ b.weighted | round(method="ceil", precision=2) }}</td>
+    <td>{{ b.mean | round(method="ceil", precision=2) }}</td>
+    <td>{{ b.notes }}</td>
+    <td>
+        {{ b.voted_on | date(format="%d.%m.%Y (%H:%M)", timezone="Europe/Berlin")}}
+    </td>
+</tr>
+{% endfor %}
+{% endblock extendedTableCells %}

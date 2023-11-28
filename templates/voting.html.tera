@@ -1,0 +1,50 @@
+{% import "macros" as m %}
+
+<!doctype html>
+<html lang="en">
+  <head>
+    {% include "meta" %}
+    {% include "styles" %}
+    <title>Voting for {{ voting.name }}</title>
+  </head>
+  <body
+    data-voting="{{ voting.name }}"
+    class="{{ voting.name }}"
+    style="display: grid; background-color: {{ voting.styles.background }}; color: {{ voting.styles.font }};">
+
+    <div style="justify-content: center;">
+      <a style="background-color: {{ voting.styles.background }}; color: {{ voting.styles.font }};border-bottom: 1px solid black;"
+         href="/">
+        Back
+      </a>
+      <h1>{{ voting.name }} Voting</h1>
+      <p>Vote ends at {{ expires_at }}!!</p>
+      <form name="voting.name" method="post">
+        {{ m::select(label="VOTER", name="name", options=voters, color=voting.styles) }}
+        {% if candidates %}
+        {{ m::select(label="CANDIDATE", name="candidate", options=candidates, key=true, color=voting.styles) }}
+        {% endif %}
+        <fieldset>
+          {% for c in voting.categories %}
+          <label for="{{ c.name }}" value="{{ c.name }}">
+            {{ c.name }}
+          </label>
+          <select
+            id="{{ c.name }}"
+            style="background-color:{{voting.styles.fields}};color:{{voting.styles.selection}}"
+            required>
+            {% for i in range(end=c.max,start=c.min) %}
+            <option value="{{ i }}">{{ i }}</option>
+            {% endfor %}
+          </select>
+          {% endfor %}
+        </fieldset>
+        {{ m::input(label="NOTE", id="notes", color=voting.styles) }}
+        <button>&#128525; Submit &#129351; &#129352; &#129353;</button>
+      </form>
+    </div>
+    {% include "tables" %}
+    {% include "scripts" %}
+    {% include "user-locator" %}
+  </body>
+</html>
