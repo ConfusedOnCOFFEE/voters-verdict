@@ -22,11 +22,11 @@ li:hover {
     cursor: pointer;
 }
 input:invalid {
-    border: .2vw solid red;
+    border: 0.2vw solid red;
 }
 
 input:valid {
-    border: .2vw solid black;
+    border: 0.2vw solid black;
 }
 a,
 label {
@@ -34,7 +34,7 @@ label {
     margin-bottom: 5px;
 }
 label,
-input{
+input {
     font-size: small;
 }
 button {
@@ -93,7 +93,6 @@ a {
     a {
         font-size: smaller;
     }
-
 }
 @media (max-width: 1000px) {
     body {

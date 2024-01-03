@@ -1,0 +1,28 @@
+.admin {
+    background-color: #ee9611;
+    color: #1169ee;
+}
+.results {
+    background-color: #000;
+    color: #fece01;
+}
+.landing {
+    background-color: #4f0df2;
+    color: #b0f20d;
+}
+.default {
+    background-color: #da2540;
+    color: #25dabf;
+}
+.manage {
+    background-color: #2681d9;
+    color: #f18f0e;
+}
+.modify-voting {
+    background-color: #5e7bd3;
+    color: #000;
+}
+.admin-voting {
+    background-color: #b10008;
+    color: #02ffa0;
+}

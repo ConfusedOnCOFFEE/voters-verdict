@@ -1,34 +1,25 @@
-class ManageVotings {
-  #xhrRequest(method, url, loadFn) {
-    const XHR = new XMLHttpRequest();
-    XHR.addEventListener("load", loadFn);
-    XHR.addEventListener("error", (event) => {
-      alert("Could not be clsoed sorry.");
+function get_votings() {
+  const buttons = Array.from(document.querySelectorAll("button"));
+  for (const button of buttons) {
+    const form = document.getElementById(button.id);
+    const ajaxRequest = this.rxjs.ajax.ajax({
+      url: [
+        "/api",
+        "v1",
+        "votings",
+        button.id,
+        "close",
+        window.location.search,
+      ].join("/"),
+      method: "PUT",
     });
-    XHR.open(method, url);
-    XHR.send();
-  }
-  get_votings() {
-    for (const button of Array.from(document.querySelectorAll("button"))) {
-      const form = document.getElementById(button.id);
-      form.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const actOnSuccess = () => alert("Voting is now closed");
-        const route = [
-          "/api",
-          "v1",
-          "votings",
-          event.target.id,
-          "close",
-          window.location.search
-        ].join("/");
-        this.#xhrRequest("PUT", route, actOnSuccess);
-      });
-    }
+    const handleClick = () =>
+      this.votersVerdict.ajax(ajaxRequest, () =>
+        window.alert("Voting is now closed."),
+      );
+    this.votersVerdict.fromEvent(form, "click", handleClick);
   }
 }
 window.addEventListener("load", () => {
-  const b = new ManageVotings();
-  b.get_votings();
+  get_votings();
 });

@@ -4,8 +4,8 @@ table {
     table-layout: auto;
 }
 td:active {
-    background-color: #45AC7E;
-    color: #AC4573;
+    background-color: #45ac7e;
+    color: #ac4573;
     font-size: 22px;
     font-weight: bold;
 }
@@ -14,7 +14,7 @@ tr {
 }
 tr:hover {
     background-color: lightgreen;
-    color: #4F0DF2;
+    color: #4f0df2;
     font-size: 24px;
     font-weight: bold;
 }
@@ -53,7 +53,6 @@ td {
     tr:hover {
         font-size: 19px;
     }
-
 }
 @media (max-width: 1000px) {
     table {
