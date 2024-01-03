@@ -1,0 +1,24 @@
+{% import "macros" as m %}
+<!doctype html>
+<html lang="en">
+  <head>
+    {% include "styles" %}
+    <title>Admin panel</title>
+  </head>
+  <body class="modify-voting">
+    <h1>Admin Panel - Voting</h1>
+    <h2>Modify voting</h2>
+    <form
+      data-route="{{ votings_route }}/{{ voting.name }}/add"
+      id="voting-form"
+      name="{{ voting.name | lower }}"
+      method="post"
+      >
+      {{ m::checkbox(label="Criterias", id_prefix="voting-criteria", entries=criterias, format=true) }}
+      {{ m::checkbox(label="Candidate", id_prefix="voting-candidates", entries=candidates) }}
+      <button>Modify voting</button>
+    </form>
+  </body>
+  <button data-invite-code="{{ voting.invite_code }}" id="voting-btn" (click)="forwardToVote()">Go modified voting</button>
+  <script type="text/javascript" src="/static/admin-modify-voting.js"></script>
+</html>

@@ -33,7 +33,7 @@
             id="{{ c.name }}"
             style="background-color:{{voting.styles.fields}};color:{{voting.styles.selection}}"
             required>
-            {% for i in range(end=c.max,start=c.min) %}
+            {% for i in range(end=c.max+1,start=c.min) %}
             <option value="{{ i }}">{{ i }}</option>
             {% endfor %}
           </select>

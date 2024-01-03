@@ -15,8 +15,8 @@ Voting stats for {{ voting.name }}
 {% block extendedTableCells %}
 {% for b in ballots | reverse %}
 <tr>
-    <td>{{ b.candidate }}</td>
-    <td>{{ b.voter }}</td>
+    <td>{{ b.voter | title }}</td>
+    <td>{{ b.candidate | title }}</td>
     {{ m::tds(data=b.votes, key="point") }}
     <td>{{ b.sum }} </td>
     <td>{{ b.weighted | round(method="ceil", precision=2) }}</td>

@@ -1,30 +1,31 @@
 {% import "macros" as m %}
 <!doctype html>
 <html lang="en">
-    <head>
-        {% include "styles" %}
-        <title>Manage votings</title>
-    </head>
-    <body class="manage">
-        <h1>Manage votings</h1>
-        <h2>Close votings and see available tokens</h2>
-        <table>
-            <tr>
-                <th>Name</th>
-                <th>Invite code</th>
-                <th>Expires at</th>
-                <th>Close</th>
-            </tr>
-            {% for v  in votings %}
-            <tr>
-                <td> {{ v.name }} </td>
-                <td> {{ v.invite_code }} </td>
-                <th> {{ v.expires_at | date(format="%d.%m.%Y (%H:%M)", timezone="Europe/Berlin")}} </th>
-                <td><button id="{{ v.name }}">Close</button></td>
-            </tr>
-            {% endfor %}
-        </table>
-        <a href="/">Back</a>
-        {% include "manage-votings-scripts" %}
-    </body>
+  <head>
+    {% include "styles" %}
+    {% include "table-styles" %}
+    <title>Manage votings</title>
+  </head>
+  <body class="manage">
+    <h1>Manage votings</h1>
+    <h2>Close votings and see available tokens</h2>
+    <table>
+      <tr>
+        <th>Name</th>
+        <th>Invite code</th>
+        <th>Expires at</th>
+        <th>Close</th>
+      </tr>
+      {% for v  in votings %}
+      <tr>
+        <td> {{ v.name }} </td>
+        <td> {{ v.invite_code }} </td>
+        <th> {{ v.expires_at | date(format="%d.%m.%Y (%H:%M)", timezone="Europe/Berlin")}} </th>
+        <td><button id="{{ v.name | lower }}">Close</button></td>
+      </tr>
+      {% endfor %}
+    </table>
+    <a href="/">Back</a>
+    {% include "manage-votings-scripts" %}
+  </body>
 </html>

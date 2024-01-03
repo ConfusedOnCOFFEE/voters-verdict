@@ -13,6 +13,26 @@
 </fieldset>
 {% endmacro %}
 
+{% macro validatedInputNonColored(label, id="name", type="text", required=false) %}
+<fieldset style="margin-bottom: 10px;">
+  <label>
+    {{ label | title }}
+  </label>
+  {% if required %}
+  <input
+    pattern="[a-zA-Z0-9\.\!-\?]+"
+    max-length="23"
+    required
+    id="{{id}}" type="{{type}}" />
+  {% else %}
+  <input
+    pattern="[a-zA-Z0-9\.\!-\?]+"
+    max-length="23"
+    id="{{id}}"
+    type="{{type}}" />
+  {% endif %}
+</fieldset>
+{% endmacro %}
 {% macro validatedInput(label, id="name", type="text", required=false, color) %}
 <fieldset style="margin-bottom: 10px;">
   <label>
@@ -96,7 +116,7 @@
 </fieldset>
 {% endmacro %}
 
-{% macro checkbox(label, id_prefix, entries, color, format=false)%}
+{% macro checkbox(label, id_prefix, entries, format=false)%}
 <fieldset id="{{ id_prefix }}" style="display: grid;">
   <label>{{ label }} </label>
   {% for e in entries | sort %}

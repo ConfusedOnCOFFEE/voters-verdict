@@ -1,4 +1,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="stylesheet" href="/static/styles.css" />
-<link rel="stylesheet" href="/static/voting-colors.css" />
+<link rel="stylesheet" href="/static/assets/styles.css" />
+<link rel="stylesheet" href="/static/assets/voting-colors.css" />
+<script type="text/javascript" src="https://unpkg.com/rxjs@%5E7/dist/bundles/rxjs.umd.min.js"></script>
+<script type="module" src="/static/voters-verdict.js"></script>

@@ -30,19 +30,19 @@
     {% endif %}
   </body>
   <script type="text/javascript">
-    let votings = document.querySelectorAll("li");
-    Array.from(votings).forEach((v) => {
-    v.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    let code = document.getElementById("invite-code").value;
-    if (code.length === 0) {
-    alert("Please provide a invite_code");
-    } else {
-    window.location.assign(
-    [ window.location.origin, "votings", event.target.id ].join("/") + "?invite_code=" + code)
-    }
-    });
+    window.addEventListener('load', () => {
+      const votings = document.querySelectorAll("li");
+      const handleClick = () => {
+        let code = document.getElementById("invite-code").value;
+        if (code.length === 0) {
+          alert("Please provide a invite_code");
+        } else {
+          window.location.assign(
+            [ window.location.origin, "votings", event.target.id ].join("/") + "?invite_code=" + code)
+        }
+      };
+      Array.from(votings)
+        .forEach((v) => this.votersVerdict.fromEventIntoTap(v, "click", handleClick))
     });
   </script>
 </html>
