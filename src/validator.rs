@@ -1,21 +1,22 @@
-use crate::common::{Ballot, Empty, Fill, Index, VoteKind, Voting, Votings};
+use crate::{
+    common::{Ballot, Empty, Fill, VoteKind, Voting, Votings},
+    persistence::ToPersistence,
+};
 use regex::Regex;
-use rocket::http::Status;
+use rocket::{debug, http::Status};
 pub const PATTERN: &str = r"[a-zA-Z0-9\.\!-\?]+";
-pub fn compare_styles_file_names(a: &str, b: &str) -> bool {
-    a.to_lowercase().starts_with(&b.to_lowercase())
-}
-fn is_correct_formated_value(value: &str, pattern: Option<&str>) -> bool {
-    let pattern = match pattern {
-        Some(p) => p,
-        None => r"[a-zA-Z0-9\.<>\-\)\(\!\?]+",
-    };
-    let re = Regex::new(pattern).unwrap();
-    if re.is_match(value) {
+pub fn compare_pattern_file_names(a: &str, b: &str) -> bool {
+    debug!("{:?} vs {:?}", a, b);
+    if a.to_lowercase().starts_with(&b.to_lowercase()) {
         true
     } else {
-        false
+        a.to_lowercase().ends_with(&b.to_lowercase())
     }
+}
+fn is_correct_formated_value(value: &str, pattern: Option<&str>) -> bool {
+    let pattern = pattern.unwrap_or(r"[a-zA-Z0-9\.<>\-\)\(\!\?]+");
+    let re = Regex::new(pattern).unwrap();
+    re.is_match(value)
 }
 
 pub async fn validate(r#type: VoteKind, voting_id: &str, voter_name: &str) -> Result<bool, Status> {
@@ -50,8 +51,7 @@ async fn validate_voting(voting_id: &str) -> bool {
     let voting_index = Votings::empty().index().await.unwrap();
     let voting_exist = voting_index
         .iter()
-        .find(|v| v.as_str().to_lowercase() == voting_id.to_lowercase())
-        .is_some();
+        .any(|v| v.as_str().to_lowercase() == voting_id.to_lowercase());
     if !voting_exist {
         return false;
     }
@@ -73,9 +73,9 @@ fn validate_candidate(candidate: &str) -> bool {
 }
 
 fn validate_notes(note: &Option<String>) -> bool {
-    let _ = match &note {
+    match &note {
         Some(n) => {
-            let notes_valid = is_correct_formated_value(&n, Some(r"[a-zA-Z0-9\. \!-\?]+"));
+            let notes_valid = is_correct_formated_value(n, Some(r"[a-zA-Z0-9\. \!-\?]+"));
             if !notes_valid {
                 return false;
             }
@@ -86,7 +86,7 @@ fn validate_notes(note: &Option<String>) -> bool {
 }
 
 async fn validate_points(voting_id: &str, ballot: &Ballot) -> bool {
-    let voting = Voting::fill(voting_id, false).await;
+    let voting = Voting::fill(voting_id, false, "voting").await;
     let mut point_names: Vec<String> = voting
         .categories
         .iter()
@@ -112,12 +112,11 @@ async fn validate_points(voting_id: &str, ballot: &Ballot) -> bool {
 }
 
 fn validate_voting_candidate(voting: &Voting, candidate: &String) -> bool {
-    let candidate_exist = voting
+    let candidate_exist = !voting
         .candidates
         .iter()
         .filter(|c| !c.voter)
-        .find(|c| &c.id.clone().unwrap() == candidate)
-        .is_none();
+        .any(|c| &c.id.clone().unwrap() == candidate);
     if !candidate_exist {
         return false;
     }

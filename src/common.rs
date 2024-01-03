@@ -1,87 +1,22 @@
-use crate::config::{ASSET_DIR, FILE_DIR};
+use crate::{persistence::ToPersistence, serialize::FromStorage};
 use chrono::{prelude::*, DateTime};
-use log::{debug, error};
+#[cfg(feature = "diesel_sqlite")]
+use diesel::prelude::*;
 use rocket::{
-    response::status::Unauthorized,
+    debug, error,
     serde::{json::Json, Deserialize, Serialize},
-    tokio::{
-        fs::File,
-        io::{AsyncReadExt, AsyncWriteExt},
-    },
-    Responder,
 };
-use std::io::Read;
 
-enum PersistenceMode<'a> {
-    DB(DatabaseConfig<'a>),
-    File(FileConfig),
-    Remote(RemoteConfig<'a>),
+pub const DELIMITER: &'static str = ",-o-,";
+pub fn cleanup_delimiter(string: &str) -> String {
+    string.replace(DELIMITER, ",")
 }
-struct RemoteConfig<'a> {
-    url: Option<&'a str>,
+pub fn add_delimiter(string: &str) -> String {
+    string.to_owned() + DELIMITER
 }
-struct FileConfig {
-    dir: String,
+pub fn accumulate_strings_with_delimiter(string: &str, accumu: &str) -> String {
+    string.to_owned() + ",-o-," + accumu
 }
-
-struct DatabaseConfig<'a> {
-    url: Option<&'a str>,
-}
-
-impl<'a> PersistenceMode<'a> {
-    fn detect_config_mode() -> Self {
-        match option_env!["VOTERS_VERDICT_STORAGE_MODE"] {
-            Some(s) => PersistenceMode::from(s),
-            None => PersistenceMode::File(FileConfig {
-                dir: match std::env::var("VOTERS_VERDICT_FILE_DIR") {
-                    Ok(file_dir) => file_dir,
-                    Err(_) => String::from("/tmp/"),
-                },
-            }),
-        }
-    }
-    fn to_conform_path() -> String {
-        match PersistenceMode::detect_config_mode() {
-            PersistenceMode::DB(d) => match d.url {
-                Some(s) => s.to_string(),
-                None => panic!("No DB"),
-            },
-            PersistenceMode::File(d) => d.dir,
-            PersistenceMode::Remote(d) => {
-                debug!("Remote URL: {:?}", d.url);
-                match d.url {
-                    Some(s) => s.to_string(),
-                    None => panic!("No remote"),
-                }
-            }
-        }
-    }
-}
-impl<'a> From<&str> for PersistenceMode<'a> {
-    fn from(candidates: &str) -> Self {
-        match candidates {
-            "1" | "db" => PersistenceMode::DB(DatabaseConfig {
-                url: option_env!("VOTERS_VERDICT_DB_URL"),
-            }),
-            "2" | "file" => PersistenceMode::File(FileConfig {
-                dir: match std::env::var(FILE_DIR) {
-                    Ok(file_dir) => file_dir,
-                    Err(_) => String::from("/tmp/"),
-                },
-            }),
-            "3" | "remote" => PersistenceMode::Remote(RemoteConfig {
-                url: option_env!["VOTERS_VERDICT_REMOTE_STORAGE"],
-            }),
-            _ => PersistenceMode::File(FileConfig {
-                dir: match std::env::var("VOTERS_VERDICT_FILE_DIR") {
-                    Ok(file_dir) => file_dir,
-                    Err(_) => String::from("/tmp/"),
-                },
-            }),
-        }
-    }
-}
-
 /////////////////////////////////////////////
 //                                         //
 //    TRAITS - TO BE IMPLEMENTED           //
@@ -111,399 +46,38 @@ pub trait IdGenerator {
 
 pub trait Selfaware {
     fn get_type(&self) -> String;
-}
-pub trait FileDir {
-    fn get_dir() -> &'static str;
-    fn get_full_path(&self, possible_remote: bool) -> String {
-        let root_path = match possible_remote {
-            true => PersistenceMode::to_conform_path(),
-            false => match std::env::var(FILE_DIR) {
-                Ok(file_dir) => file_dir,
-                Err(_) => String::from("/tmp/"),
-            },
-        };
-        root_path + &Self::get_dir()
-    }
+    fn get_name(&self) -> String;
 }
 
-/////////////////////////////////////////////
-//                                         //
-//    TRAIT - IMPLEMENTED                  //
-//                                         //
-/////////////////////////////////////////////
+pub trait Table {
+    fn get_identity_column_name() -> String;
+    fn get_table(insert: bool) -> String;
+    fn get_db_columns() -> String;
+    fn to_db_row(&self) -> String;
+}
+pub trait QueryableExt: IdGenerator + Table + Empty + Selfaware {}
 #[rocket::async_trait]
-pub trait Index: FileDir + FromJsonFile {
-    async fn index(&self) -> Result<Vec<String>, String> {
-        let uri = self.get_full_path(true) + "/index.json";
-        match PersistenceMode::detect_config_mode() {
-            PersistenceMode::DB(_d) => {
-                panic!("n/a. Please use DB or File as VOTERS_VERDICT_STORAGE_MODE")
-            }
-            PersistenceMode::File(_d) => self.read_dir(&uri).await,
-            PersistenceMode::Remote(_d) => {
-                debug!("Remote URL: {:?}", uri);
-                match std::env::var("VOTERS_VERDICT_SELF_CERT") {
-                    Ok(cert) => {
-                        let mut buf = Vec::new();
-                        match File::open(cert).await {
-                            Ok(mut f) => {
-                                let _ = match f.read_to_end(&mut buf).await {
-                                    Ok(_) => {}
-                                    Err(e) => error!("{:?}", e),
-                                };
-
-                                match reqwest::Certificate::from_der(&buf) {
-                                    Ok(c) => {
-                                        let client_builder =
-                                            reqwest::Client::builder().add_root_certificate(c);
-                                        self.build_client(&uri, Some(client_builder)).await
-                                    }
-                                    Err(_e) => {
-                                        error!("Self signed cert couldn't be loaded.");
-                                        self.build_client(&uri, None).await
-                                    }
-                                }
-                            }
-                            Err(_) => {
-                                error!("Self signed cert couldn't be loaded.");
-                                self.build_client(&uri, None).await
-                            }
-                        }
-                    }
-                    Err(_) => self.build_client(&uri, None).await,
-                }
-            }
+pub trait Fill: Empty + FromStorage {
+    fn convert(name: &str, matched_type: &str) -> String {
+        match matched_type {
+            "criteria" => name.to_string(),
+            "candidate" => "candidate_".to_owned() + name,
+            _ => name.to_string().to_lowercase(),
         }
     }
-    async fn build_client(
-        &self,
-        uri: &str,
-        client_builder: Option<reqwest::ClientBuilder>,
-    ) -> Result<Vec<String>, String> {
-        let custom_client = match client_builder {
-            Some(builder) => builder,
-            None => reqwest::Client::builder(),
-        };
-        let client = match custom_client.build() {
-            Ok(c) => c,
-            Err(_) => reqwest::Client::new(),
-        };
-        self.http_get(uri, client).await
-    }
-
-    async fn http_get(&self, uri: &str, client: reqwest::Client) -> Result<Vec<String>, String> {
-        let get_client = client.get(uri);
-        match std::env::var("VOTERS_VERDICT_REMOTE_CREDENTIALS") {
-            Ok(t) => match std::env::var("VOTERS_VERDICT_REMOTE_AUTH") {
-                Ok(auths) => {
-                    debug!("Detected remote auth: {}", auths);
-                    match auths.as_str() {
-                        "bearer" => {
-                            debug!("Detected bearer auth");
-                            self.get(get_client.bearer_auth("Bearer ".to_owned() + &t))
-                                .await
-                        }
-                        "basic" => {
-                            debug!("Detected basic auth");
-                            let credentails = auths.split_once(':');
-                            match credentails {
-                                Some((user, pw)) => {
-                                    self.get(get_client.basic_auth(user, Some(pw))).await
-                                }
-                                None => {
-                                    error!("Credentials for basic auth not provided");
-                                    self.get(get_client).await
-                                }
-                            }
-                        }
-                        _ => self.get(get_client).await,
-                    }
-                }
-                Err(_) => self.get(get_client).await,
-            },
-            Err(_) => self.get(get_client).await,
-        }
-    }
-    async fn get(&self, request_builder: reqwest::RequestBuilder) -> Result<Vec<String>, String> {
-        match request_builder
-            .header(
-                reqwest::header::ACCEPT,
-                reqwest::header::HeaderValue::from_static("application/json"),
-            )
-            .send()
-            .await
-        {
-            Ok(r) => {
-                debug!("Raw request response: {:?}", r);
-                match r.json::<Vec<String>>().await {
-                    Ok(d) => Ok(d),
-                    Err(e) => {
-                        error!("{:?}", e);
-                        Ok(vec![])
-                    }
-                }
-            }
-            Err(e) => {
-                error!("{:?}", e);
-                Ok(vec![])
-            }
-        }
-    }
-
-    async fn list(&self) -> Result<Vec<String>, String> {
-        let full_path = self.get_full_path(true);
-        debug!("{:?}", full_path);
-        let read_dir = tokio::fs::read_dir(full_path);
-        match read_dir.await {
-            Ok(mut entries) => {
-                let mut files = vec![];
-                while let entry = entries.next_entry() {
-                    match entry.await {
-                        Ok(e) => match e {
-                            Some(unpacked_e) => match unpacked_e.file_name().into_string() {
-                                Ok(file_name) => match file_name.strip_suffix(".json") {
-                                    Some(cleaned) => {
-                                        files.push(cleaned.to_owned());
-                                    }
-                                    None => {}
-                                },
-                                Err(_) => {}
-                            },
-                            None => break,
-                        },
-                        Err(_) => break,
-                    }
-                }
-                Ok(files)
-            }
-            Err(_) => Ok(vec![]),
-        }
-    }
-    async fn read_dir(&self, uri: &str) -> Result<Vec<String>, String> {
-        debug!("Reading file from: {:?}", uri);
-        let raw_file = self.from_file(uri).await;
-        match rocket::serde::json::from_str::<Vec<String>>(&raw_file) {
-            Ok(json) => Ok(json),
-            Err(_votes) => Ok(vec![]),
-        }
-    }
-}
-#[rocket::async_trait]
-pub trait IsUnique: Index {
-    async fn is_unique(&self, id: &str) -> Result<String, VoteErrorKind>
-    where
-        Self: Sync,
-    {
-        match self.index().await {
-            Ok(files_exist) => match files_exist.iter().find(|v| match v.split_once('_') {
-                Some((_v_type, found_id)) => found_id.to_lowercase() == id.to_lowercase(),
-                None => true,
-            }) {
-                Some(s) => Ok(s.to_string()),
-                None => Err(VoteErrorKind::NotFound(String::from("Not found"))),
-            },
-            Err(_) => Err(VoteErrorKind::NotFound(String::from("Not found"))),
-        }
-    }
-}
-
-#[rocket::async_trait]
-pub trait FromJsonFile: Empty + FileDir {
-    async fn read_to_string(&self, f: File) -> String {
-        let mut contents = String::new();
-        f.into_std().await.read_to_string(&mut contents).unwrap();
-        contents
-    }
-    async fn from_file(&self, path: &str) -> String {
-        match File::open(path).await {
-            Ok(r) => self.read_to_string(r).await,
-            Err(e) => {
-                error!("Error: {:?} on {:?}", e, path);
-                String::new()
-            }
-        }
-    }
-    async fn from_json_file(&self, id: &str, internal: bool) -> Json<Self>
-    where
-        Self: Sized + for<'de> Deserialize<'de>,
-    {
-        Json(self.from_json_file_to_self(id, internal).await)
-    }
-
-    async fn from_json_file_to_self(&self, id: &str, internal: bool) -> Self
-    where
-        Self: Sized + for<'de> Deserialize<'de>,
-    {
-        let path = self.get_full_path(true) + "/" + id + ".json";
-        let raw_file = match PersistenceMode::detect_config_mode() {
-            PersistenceMode::DB(_d) => {
-                panic!("n/a. Please use DB or File as VOTERS_VERDICT_STORAGE_MODE")
-            }
-            PersistenceMode::File(_d) => self.from_file(&path).await,
-            PersistenceMode::Remote(_d) => {
-                if internal {
-                    self.from_file(&path).await
-                } else {
-                    debug!("Full path: {:?}", self.get_full_path(true));
-                    match reqwest::get(self.get_full_path(true) + "/" + id + ".json").await {
-                        Ok(r) => match r.text().await {
-                            Ok(as_text) => as_text,
-                            Err(e) => {
-                                error!("{:?}", e);
-                                String::from("{}")
-                            }
-                        },
-                        Err(e) => {
-                            error!("{:?}", e);
-                            String::from("{}")
-                        }
-                    }
-                }
-            }
-        };
-        match rocket::serde::json::from_str::<Self>(&raw_file) {
-            Ok(json) => json,
-            Err(e) => {
-                error!("{:?}", e);
-                Self::empty()
-            }
-        }
-    }
-}
-
-#[rocket::async_trait]
-pub trait ToJsonFile: FileDir + IdGenerator + Serialize + Selfaware {
-    async fn to_file(&self, path: String, stringified: String) -> Result<String, VoteErrorKind> {
-        let created_artifact = match File::open(&path).await {
-            Ok(_f) => Err(VoteErrorKind::Conflict(self.get_type() + " already exist.")),
-            Err(_) => self.create(path, stringified).await,
-        };
-        match created_artifact {
-            Ok(_) => Ok(self.update_index().await?),
-            Err(e) => Err(e),
-        }
-    }
-
-    #[cfg(test)]
-    async fn create(&self, _path: String, _stringified: String) -> Result<String, VoteErrorKind> {
-        Ok(String::from("Done"))
-    }
-
-    #[cfg(not(test))]
-    async fn create(&self, path: String, stringified: String) -> Result<String, VoteErrorKind> {
-        match File::create(&path).await {
-            Ok(f) => self.write_all(f, stringified).await,
-            Err(e) => {
-                error!("{:?}", e);
-                Err(VoteErrorKind::IO(e))
-            }
-        }
-    }
-    async fn write_all(&self, mut f: File, stringified: String) -> Result<String, VoteErrorKind> {
-        match f.write_all(stringified.as_bytes()).await {
-            Ok(_) => {
-                f.sync_all().await?;
-                Ok(String::from("Done"))
-            }
-            Err(e) => {
-                error!("{:?}", e);
-                Err(VoteErrorKind::IO(e))
-            }
-        }
-    }
-    #[cfg(test)]
-    async fn update_index(&self) -> Result<String, VoteErrorKind> {
-        Ok(String::from("Saved and index updated."))
-    }
-
-    #[cfg(not(test))]
-    async fn update_index(&self) -> Result<String, VoteErrorKind> {
-        let index_file_path = self.get_full_path(true) + "/index.json";
-        match File::open(&index_file_path).await {
-            Ok(f) => {
-                let mut contents = String::new();
-                f.into_std().await.read_to_string(&mut contents).unwrap();
-                match rocket::serde::json::from_str::<Vec<String>>(&contents) {
-                    Ok(mut vec) => {
-                        vec.push(self.get_id());
-                        match self
-                            .create(
-                                index_file_path.clone(),
-                                rocket::serde::json::to_string(&vec).unwrap(),
-                            )
-                            .await
-                        {
-                            Ok(_) => Ok(String::from("Saved and index updated.")),
-                            Err(_) => self.init_index(&index_file_path).await,
-                        }
-                    }
-                    Err(_e) => self.init_index(&index_file_path).await,
-                }
-            }
-            Err(_) => self.init_index(&index_file_path).await,
-        }
-    }
-
-    #[cfg(test)]
-    async fn init_index(&self) -> Result<String, VoteErrorKind> {
-        Ok(String::from("Saved and index updated."))
-    }
-    #[cfg(not(test))]
-    async fn init_index(&self, index_file_path: &str) -> Result<String, VoteErrorKind> {
-        match self
-            .create(
-                String::from(index_file_path),
-                "[\"".to_owned() + &self.get_id() + "\"]",
-            )
-            .await
-        {
-            Ok(_) => Ok(String::from("Saved and index updated.")),
-            Err(e) => Err(e),
-        }
-    }
-    async fn to_json_file(&self) -> Result<String, VoteErrorKind> {
-        match rocket::serde::json::to_string(&self) {
-            Ok(stringified) => {
-                let path = self.get_full_path(true) + "/" + &self.get_id() + ".json";
-                self.to_file(path, stringified).await
-            }
-            Err(e) => {
-                error!("{:?}", e);
-                Err(VoteErrorKind::Serialize(e))
-            }
-        }
-    }
-    async fn update_json_file(&self) -> Result<String, VoteErrorKind> {
-        match rocket::serde::json::to_string(&self) {
-            Ok(stringified) => {
-                let path = self.get_full_path(true) + "/" + &self.get_id() + ".json";
-                self.create(path, stringified).await
-            }
-            Err(e) => {
-                error!("{:?}", e);
-                Err(VoteErrorKind::Serialize(e))
-            }
-        }
-    }
-}
-
-#[rocket::async_trait]
-pub trait Fill: Empty + FromJsonFile {
-    async fn fill(name: &str, internal: bool) -> Self
+    async fn fill(name: &str, internal: bool, matched_type: &str) -> Self
     where
         Self: Sync + Sized + for<'de> Deserialize<'de>,
     {
-        let lowercase_name = name.to_string().to_lowercase();
         Self::empty()
-            .from_json_file_to_self(&lowercase_name, internal)
+            .load_into(&Self::convert(name, matched_type), internal)
             .await
     }
-    async fn fill_json(name: &str, internal: bool) -> Json<Self>
+    async fn fill_json(name: &str, internal: bool, matched_type: &str) -> Json<Self>
     where
         Self: Sync + Sized + for<'de> Deserialize<'de>,
     {
-        let lowercase_name = name.to_string().to_lowercase();
-        Json(Self::fill(&lowercase_name, internal).await)
+        Json(Self::fill(name, internal, matched_type).await)
     }
 }
 
@@ -518,62 +92,17 @@ impl From<&str> for Voting {
         Self::confident_voting(voting_id)
     }
 }
-/////////////////////////////////////////////
-//                                         //
-//        VOTE-ERROR-KIND                  //
-//                                         //
-/////////////////////////////////////////////
-
-#[derive(Debug)]
-pub enum VoteErrorKind<'r> {
-    MissingField(MissingField<'r>),
-    Serialize(rocket::serde::json::serde_json::Error),
-    IO(std::io::Error),
-    Conflict(String),
-    NotFound(String),
-    Unauthorized(Unauthorized<String>),
-}
-
-impl<'r> ToString for VoteErrorKind<'r> {
-    fn to_string(&self) -> String {
-        match self {
-            VoteErrorKind::Serialize(e) => e.to_string(),
-            VoteErrorKind::MissingField(e) => e.to_string(),
-            VoteErrorKind::IO(e) => e.to_string(),
-            VoteErrorKind::Conflict(e) => e.to_string(),
-            VoteErrorKind::NotFound(e) => e.to_string(),
-            VoteErrorKind::Unauthorized(e) => e.0.clone(),
-        }
-    }
-}
-
-impl<'r> From<std::io::Error> for VoteErrorKind<'r> {
-    fn from(error: std::io::Error) -> Self {
-        VoteErrorKind::IO(error)
-    }
-}
-
-impl<'r> From<rocket::serde::json::serde_json::Error> for VoteErrorKind<'r> {
-    fn from(error: rocket::serde::json::serde_json::Error) -> Self {
-        VoteErrorKind::Serialize(error)
-    }
-}
-
-#[derive(Responder, Debug)]
-#[response(content_type = "application/json")]
-pub struct MissingField<'r> {
-    field: &'r str,
-}
-impl<'r> ToString for MissingField<'r> {
-    fn to_string(&self) -> String {
-        self.field.to_string()
-    }
-}
 
 trait ValidFileName {
     fn valid_file_name(self) -> bool;
 }
 
+pub fn from_optional_str(s: Option<&str>) -> String {
+    match s {
+        Some(b) => b.to_string(),
+        None => String::new(),
+    }
+}
 /////////////////////////////////////////////
 //                                         //
 //           JSON WRAPPER                  //
@@ -650,34 +179,81 @@ impl From<Criterion> for VoteKind {
 //                                         //
 /////////////////////////////////////////////
 
-#[derive(Serialize, PartialEq, Deserialize)]
+#[derive(Debug, Serialize, PartialEq, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct Votings {
     pub votings: Vec<Voting>,
 }
-
-impl FromJsonFile for Votings {}
-impl Index for Votings {}
-impl FileDir for Votings {
-    fn get_dir() -> &'static str {
-        "votings"
+impl Votings {
+    fn values(&self) -> String {
+        self.votings
+            .to_vec()
+            .iter()
+            .map(|v| v.values())
+            .reduce(|acc, e| acc + &e)
+            .unwrap()
     }
 }
-
+#[cfg(feature = "sqlx_sqlite")]
+impl Table for Votings {
+    fn get_identity_column_name() -> String {
+        Voting::get_identity_column_name()
+    }
+    fn get_table(insert: bool) -> String {
+        Voting::get_table(insert)
+    }
+    fn get_db_columns() -> String {
+        Voting::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        self.values()
+    }
+}
+impl std::str::FromStr for Votings {
+    type Err = crate::error::FromErrorKind;
+    fn from_str(v: &str) -> Result<Self, Self::Err> {
+        debug!("{:?}", v);
+        let _result: Vec<&str> = v.split(",-o-,").collect();
+        Ok(Self {
+            votings: vec![], //TODO
+        })
+    }
+}
 impl ToJson for Votings {
     fn to_empty_json() -> Json<Votings> {
         Json(Votings::empty())
     }
 }
-
 impl Empty for Votings {
     fn empty() -> Votings {
         Votings { votings: vec![] }
     }
 }
+impl IdGenerator for Votings {
+    fn get_id(&self) -> String {
+        self.generate_id()
+    }
+    fn generate_id(&self) -> String {
+        self.get_type()
+    }
+}
+impl Selfaware for Votings {
+    fn get_type(&self) -> String {
+        String::from("Votings")
+    }
+
+    fn get_name(&self) -> String {
+        String::from("Votings")
+    }
+}
+
 impl Selfaware for Voting {
     fn get_type(&self) -> String {
         String::from("voting")
+    }
+
+    fn get_name(&self) -> String {
+        self.name.to_lowercase().to_owned()
     }
 }
 impl IdGenerator for Voting {
@@ -685,7 +261,7 @@ impl IdGenerator for Voting {
         self.generate_id()
     }
     fn generate_id(&self) -> String {
-        format!("{}", self.name)
+        self.name.to_lowercase().to_string()
     }
 }
 
@@ -694,7 +270,7 @@ impl IdGenerator for Voting {
 //                 VOTING                  //
 //                                         //
 /////////////////////////////////////////////
-#[derive(Debug, Serialize, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Serialize, PartialEq, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct VotingStyles {
     pub background: String,
@@ -712,6 +288,12 @@ impl VotingStyles {
             fields: String::from("#238636"),
         }
     }
+    pub fn values(&self) -> String {
+        format!(
+            "{}, {}, {}, {}",
+            self.background, self.font, self.selection, self.fields
+        )
+    }
 }
 #[derive(Debug, Serialize, PartialEq, Deserialize)]
 #[serde(crate = "rocket::serde")]
@@ -723,7 +305,7 @@ pub struct CreateVoting {
     pub styles: Option<VotingStyles>,
     pub invite_code: String,
 }
-#[derive(Debug, Serialize, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Serialize, PartialEq, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct Voting {
     pub name: String,
@@ -733,6 +315,266 @@ pub struct Voting {
     pub categories: Vec<Criterion>,
     pub styles: VotingStyles,
     pub invite_code: String,
+}
+impl Voting {
+    fn properties(in_parenthesis: bool) -> String {
+        if in_parenthesis {
+            String::from(
+                "( name, expires_at, created_at, candidates, categories, styles, invite_code )",
+            )
+        } else {
+            String::from(
+                "name, expires_at, created_at, candidates, categories, styles, invite_code",
+            )
+        }
+    }
+    fn values(&self) -> String {
+        debug!("Voting values");
+        VotingTable::from(self).values()
+    }
+}
+
+#[cfg(feature = "sqlx_sqlite")]
+impl Table for Voting {
+    fn get_identity_column_name() -> String {
+        String::from("name")
+    }
+    fn get_table(_insert: bool) -> String {
+        String::from("votings")
+    }
+    fn get_db_columns() -> String {
+        Voting::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        self.values()
+    }
+}
+#[cfg(feature = "db")]
+impl From<Vec<VotingTable>> for Votings {
+    fn from(rows: Vec<VotingTable>) -> Self {
+        Self {
+            votings: rows.iter().map(|v| Voting::from(v)).collect(),
+        }
+    }
+}
+
+#[cfg(not(feature = "diesel_sqlite"))]
+#[derive(Debug, Serialize, PartialEq, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct VotingTable {
+    pub name: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub candidates: String,
+    pub categories: String,
+    pub styles: String,
+    pub invite_code: String,
+}
+impl VotingTable {
+    fn get_name(&self) -> String {
+        self.name.to_lowercase().to_owned()
+    }
+    fn properties(in_parenthesis: bool) -> String {
+        Voting::properties(in_parenthesis)
+    }
+    fn values(&self) -> String {
+        debug!("VotingTable values");
+        vec![
+            "\"".to_owned() + &self.name.clone() + "\"",
+            self.expires_at.to_string(),
+            self.created_at.to_string(),
+            self.candidates.clone(),
+            self.categories.clone(),
+            self.styles.clone(),
+            self.invite_code.clone(),
+        ]
+        .into_iter()
+        .reduce(|acc, e| acc + ", '" + &e + "'")
+        .unwrap()
+    }
+}
+#[cfg(feature = "diesel_sqlite")]
+#[derive(Debug, Serialize, PartialEq, Deserialize, Queryable, Selectable, Insertable)]
+#[diesel(table_name = votings )]
+#[serde(crate = "rocket::serde")]
+pub struct VotingTable {
+    pub name: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub candidates: String,
+    pub categories: String,
+    pub styles: String,
+    pub invite_code: String,
+}
+#[cfg(feature = "sqlx_sqlite")]
+impl Table for VotingTable {
+    fn get_identity_column_name() -> String {
+        String::from("name")
+    }
+    fn get_table(insert: bool) -> String {
+        Voting::get_table(insert)
+    }
+    fn get_db_columns() -> String {
+        Voting::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        self.values()
+    }
+}
+
+impl std::str::FromStr for Voting {
+    type Err = crate::error::FromErrorKind;
+    fn from_str(v: &str) -> Result<Self, Self::Err> {
+        debug!("{:?}", v);
+        let result: Vec<&str> = v.split(",-o-,").collect();
+        if result.len() >= 7 {
+            debug!("We got all 7 rows back!:");
+            Ok(Self {
+                name: from_optional_str(result.get(0).copied()),
+                expires_at: Some(DateTime::from_str(result.get(1).copied().unwrap()).unwrap()),
+                created_at: Some(DateTime::from_str(result.get(2).copied().unwrap()).unwrap()),
+                candidates: match rocket::serde::json::from_str::<Vec<Candidate>>(
+                    &from_optional_str(result.get(3).copied()),
+                ) {
+                    Ok(stringified) => stringified,
+                    Err(e) => {
+                        error!("{:?}", e);
+                        vec![]
+                    }
+                },
+                categories: match rocket::serde::json::from_str::<Vec<Criterion>>(
+                    &from_optional_str(result.get(4).copied()),
+                ) {
+                    Ok(stringified) => stringified,
+                    Err(e) => {
+                        error!("{:?}", e);
+                        vec![]
+                    }
+                },
+                styles: match rocket::serde::json::from_str::<VotingStyles>(&from_optional_str(
+                    result.get(5).copied(),
+                )) {
+                    Ok(stringified) => stringified,
+                    Err(e) => {
+                        error!("{:?}", e);
+                        VotingStyles::default()
+                    }
+                },
+                invite_code: from_optional_str(result.get(6).copied()),
+            })
+        } else {
+            debug!("Nope, sth didnt wor.");
+            Err(crate::error::FromErrorKind::Serialize(String::from(
+                "Voting serialize failed.",
+            )))
+        }
+    }
+}
+impl From<&VotingTable> for Voting {
+    fn from(v: &VotingTable) -> Self {
+        Self {
+            name: String::from(&v.name),
+            expires_at: Some(v.expires_at),
+            created_at: Some(v.created_at),
+            candidates: match rocket::serde::json::from_str::<Vec<Candidate>>(&v.candidates) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    vec![]
+                }
+            },
+            categories: match rocket::serde::json::from_str::<Vec<Criterion>>(&v.categories) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    vec![]
+                }
+            },
+            styles: match rocket::serde::json::from_str::<VotingStyles>(&v.styles) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    VotingStyles::default()
+                }
+            },
+            invite_code: String::from(&v.invite_code),
+        }
+    }
+}
+impl From<VotingTable> for Voting {
+    fn from(v: VotingTable) -> Self {
+        Self {
+            name: v.name,
+            expires_at: Some(v.expires_at),
+            created_at: Some(v.created_at),
+            candidates: match rocket::serde::json::from_str::<Vec<Candidate>>(&v.candidates) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    vec![]
+                }
+            },
+            categories: match rocket::serde::json::from_str::<Vec<Criterion>>(&v.categories) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    vec![]
+                }
+            },
+            styles: match rocket::serde::json::from_str::<VotingStyles>(&v.styles) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    VotingStyles::default()
+                }
+            },
+            invite_code: v.invite_code,
+        }
+    }
+}
+#[cfg(feature = "diesel_sqlite")]
+table! {
+    votings (name) {
+        name -> Text,
+        expires_at -> TimestamptzSqlite,
+        created_at -> TimestamptzSqlite,
+        candidates -> Text,
+        categories -> Text,
+        styles -> Text,
+        invite_code -> Text,
+    }
+}
+#[cfg(feature = "db")]
+impl From<&Voting> for VotingTable {
+    fn from(v: &Voting) -> Self {
+        Self {
+            name: v.name.clone(),
+            expires_at: v.expires_at.unwrap(),
+            created_at: v.created_at.unwrap(),
+            candidates: match rocket::serde::json::to_string(&v.candidates) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    String::new()
+                }
+            },
+            categories: match rocket::serde::json::to_string(&v.categories) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    String::new()
+                }
+            },
+            styles: match rocket::serde::json::to_string(&v.styles) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    String::new()
+                }
+            },
+            invite_code: v.invite_code.clone(),
+        }
+    }
 }
 impl Voting {
     fn confident_voting(id: &str) -> Self {
@@ -745,12 +587,6 @@ impl Voting {
             styles: VotingStyles::default(),
             invite_code: String::from("access"),
         }
-    }
-}
-impl FromJsonFile for Voting {}
-impl FileDir for Voting {
-    fn get_dir() -> &'static str {
-        "votings"
     }
 }
 
@@ -775,7 +611,6 @@ impl Empty for Voting {
 }
 
 impl Fill for Voting {}
-impl ToJsonFile for Voting {}
 
 /////////////////////////////////////////////
 //                                         //
@@ -787,7 +622,8 @@ impl ToJsonFile for Voting {}
 #[serde(crate = "rocket::serde")]
 pub struct NonVoter<'r>(&'r str);
 
-#[derive(Debug, Serialize, PartialEq, Deserialize, Clone)]
+#[cfg(not(feature = "diesel_sqlite"))]
+#[derive(Debug, Clone, Serialize, PartialEq, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct Candidate {
     pub voter: bool,
@@ -796,6 +632,83 @@ pub struct Candidate {
 }
 
 impl Candidate {
+    fn properties(in_parenthesis: bool) -> String {
+        if in_parenthesis {
+            String::from("( voter, id, label )")
+        } else {
+            String::from("voter, id, label")
+        }
+    }
+    fn values(&self) -> String {
+        vec![
+            match self.voter {
+                true => String::from("true"),
+                false => String::from("false"),
+            },
+            "\"".to_owned() + &self.get_id() + "\"",
+            "\"".to_owned() + &self.label.clone() + "\"",
+        ]
+        .into_iter()
+        .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+        .unwrap()
+    }
+}
+impl std::str::FromStr for Candidate {
+    type Err = crate::error::FromErrorKind;
+    fn from_str(v: &str) -> Result<Self, Self::Err> {
+        debug!("{:?}", v);
+        let result: Vec<&str> = v.split(",-o-,").collect();
+        Ok(Self {
+            voter: true, // TODO from_optional_str(result.get(0).copied()),
+            id: Some(from_optional_str(result.get(1).copied())),
+            label: from_optional_str(result.get(2).copied()),
+        })
+    }
+}
+#[cfg(feature = "diesel_sqlite")]
+#[derive(Debug, Clone, Serialize, PartialEq, Deserialize, Queryable, Insertable)]
+#[diesel(table_name = candidates)]
+#[serde(crate = "rocket::serde")]
+pub struct Candidate {
+    pub voter: bool,
+    pub id: Option<String>,
+    pub label: String,
+}
+
+#[cfg(feature = "sqlx_sqlite")]
+impl Table for Candidate {
+    fn get_identity_column_name() -> String {
+        String::from("id")
+    }
+    fn get_table(insert: bool) -> String {
+        if insert {
+            String::from("candidates ") + &Candidate::properties(true)
+        } else {
+            String::from("candidates")
+        }
+    }
+    fn get_db_columns() -> String {
+        Candidate::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        self.values()
+    }
+}
+#[cfg(feature = "diesel_sqlite")]
+table! {
+    candidates (id) {
+        id -> Nullable<Text>,
+        label -> Text,
+        voter -> Bool,
+    }
+}
+impl Candidate {
+    fn get_name(&self) -> String {
+        match &self.id {
+            Some(i) => i.to_string(),
+            None => String::from("n/a"),
+        }
+    }
     pub fn get_label_from_id(id: &str) -> String {
         let inserted_spaces = id.replace("-#s-", " ");
         let inserted_extra_ident = inserted_spaces.as_str().replace("%-%", "-#s-");
@@ -851,12 +764,6 @@ impl IdGenerator for Candidate {
     }
 }
 
-impl FileDir for Candidate {
-    fn get_dir() -> &'static str {
-        "candidates"
-    }
-}
-
 impl Selfaware for Candidate {
     fn get_type(&self) -> String {
         match self.voter {
@@ -864,19 +771,22 @@ impl Selfaware for Candidate {
             true => String::from("Voter"),
         }
     }
+
+    fn get_name(&self) -> String {
+        match &self.id {
+            Some(k) => k.to_lowercase().to_owned(),
+            None => String::from(self.label.as_str()),
+        }
+    }
 }
-impl ToJsonFile for Candidate {}
-impl Index for Candidate {}
-impl IsUnique for Candidate {}
-impl FromJsonFile for Candidate {}
 #[rocket::async_trait]
 impl Fill for Candidate {
-    async fn fill(name: &str, internal: bool) -> Self
+    async fn fill(name: &str, internal: bool, _matched_type: &str) -> Self
     where
         Self: Sync + Sized + for<'de> Deserialize<'de>,
     {
         Self::empty()
-            .from_json_file_to_self(
+            .load_into(
                 &("candidate_".to_string() + &(name.to_lowercase())),
                 internal,
             )
@@ -942,13 +852,69 @@ impl Empty for Candidates {
 //                                         //
 //            CAST BALLOT                  //
 //                                         //
-/////////////////////////////////////////////
+////////////////////////////////////////////
 
-#[derive(Serialize, Debug, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct CastBallots {
     pub voting: Option<String>,
     pub ballots: Vec<KnownBallots>,
+}
+#[cfg(feature = "diesel_sqlite")]
+table! {
+    ballots (voter) {
+        voter -> Text,
+        human_identifier -> Text,
+        candidate -> Text,
+        sum -> SmallInt,
+        weighted -> Float,
+        mean -> Float,
+        notes -> Text,
+        votes -> Text,
+        voted_on -> TimestamptzSqlite,
+    }
+}
+impl CastBallots {
+    pub fn properties(in_parenthesis: bool) -> String {
+        let raw = "human_identifier, candidate, voter, sum, weighted, mean, notes, votes, voted_on";
+        if in_parenthesis {
+            "( ".to_owned() + raw + " )"
+        } else {
+            raw.to_string()
+        }
+    }
+}
+
+#[cfg(feature = "sqlx_sqlite")]
+impl Table for CastBallots {
+    fn get_identity_column_name() -> String {
+        String::from("human_identifier")
+    }
+    fn get_table(insert: bool) -> String {
+        if insert {
+            String::from("ballots") + &CastBallots::properties(true)
+        } else {
+            String::from("ballots")
+        }
+    }
+    fn get_db_columns() -> String {
+        CastBallots::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        error!("NOT IMPLEMENTED");
+        String::new()
+    }
+}
+impl std::str::FromStr for CastBallots {
+    type Err = crate::error::FromErrorKind;
+    fn from_str(v: &str) -> Result<Self, Self::Err> {
+        debug!("{:?}", v);
+        let result: Vec<&str> = v.split(",-o-,").collect();
+        Ok(Self {
+            voting: Some(from_optional_str(result.get(0).copied())),
+            ballots: vec![], // TODO result.get(0).unwrap()
+        })
+    }
 }
 impl ToJson for CastBallots {
     fn to_empty_json() -> Json<Self> {
@@ -990,32 +956,17 @@ impl IdGenerator for CastBallots {
     }
 }
 
-impl FileDir for CastBallots {
-    fn get_dir() -> &'static str {
-        "ballots"
-    }
-    fn get_full_path(&self, _possible_remote: bool) -> String {
-        let root_path = match std::env::var(FILE_DIR) {
-            Ok(file_dir) => file_dir,
-            Err(_) => String::from("/tmp/"),
-        };
-        root_path.to_owned() + &Self::get_dir()
-    }
-}
-
 impl Selfaware for CastBallots {
     fn get_type(&self) -> String {
         String::from("CBallots")
     }
+
+    fn get_name(&self) -> String {
+        String::from("CBallots")
+    }
 }
 
-impl FromJsonFile for CastBallots {}
-
-impl ToJsonFile for CastBallots {}
-
 impl Fill for CastBallots {}
-
-impl Index for CastBallots {}
 
 /////////////////////////////////////////////
 //                                         //
@@ -1023,11 +974,29 @@ impl Index for CastBallots {}
 //                                         //
 /////////////////////////////////////////////
 
-#[derive(Serialize, Clone, Debug, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct KnownBallots {
     pub voter: String,
     pub ballots: Vec<Ballot>,
+}
+impl KnownBallots {
+    fn get_name(&self) -> String {
+        self.voter.to_lowercase().to_owned()
+    }
+    fn values(&self) -> String {
+        vec![
+            self.voter.clone(),
+            self.ballots
+                .iter()
+                .map(|b| b.values())
+                .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+                .unwrap(),
+        ]
+        .into_iter()
+        .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+        .unwrap()
+    }
 }
 
 impl ToJson for KnownBallots {
@@ -1051,7 +1020,7 @@ impl Empty for KnownBallots {
 //                                         //
 /////////////////////////////////////////////
 
-#[derive(Clone, Serialize, Debug, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct Ballot {
     pub candidate: String,
@@ -1060,6 +1029,29 @@ pub struct Ballot {
     pub voted_on: Option<DateTime<Utc>>,
 }
 
+impl Ballot {
+    fn values(&self) -> String {
+        vec![
+            self.candidate.clone(),
+            self.votes
+                .iter()
+                .map(|v| v.values())
+                .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+                .unwrap(),
+            match &self.notes {
+                Some(n) => n.to_string(),
+                None => String::from("no-notes"),
+            },
+            match &self.voted_on {
+                Some(v) => v.to_string(),
+                None => String::from("n/a"),
+            },
+        ]
+        .into_iter()
+        .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+        .unwrap()
+    }
+}
 /////////////////////////////////////////////
 //                                         //
 //                 VOTE                    //
@@ -1072,7 +1064,86 @@ pub struct Vote {
     pub name: String,
     pub point: i8,
 }
-
+impl Vote {
+    fn get_name(&self) -> String {
+        self.name.to_lowercase().to_owned()
+    }
+    fn properties(in_parenthesis: bool) -> String {
+        if in_parenthesis {
+            String::from("( name, point )")
+        } else {
+            String::from("name, point")
+        }
+    }
+    fn values(&self) -> String {
+        vec![self.name.clone(), self.point.to_string()]
+            .into_iter()
+            .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+            .unwrap()
+    }
+}
+#[cfg(not(feature = "diesel_sqlite"))]
+#[derive(Serialize, Clone, Debug, PartialEq, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct VoteTable {
+    pub name: String,
+    pub point: i16,
+}
+impl VoteTable {
+    fn get_name(&self) -> String {
+        self.name.to_lowercase().to_owned()
+    }
+    fn properties(in_parenthesis: bool) -> String {
+        Vote::properties(in_parenthesis)
+    }
+    fn values(&self) -> String {
+        vec![
+            "\"".to_owned() + &self.name.clone() + "\"",
+            self.point.to_string(),
+        ]
+        .into_iter()
+        .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+        .unwrap()
+    }
+}
+#[cfg(feature = "diesel_sqlite")]
+#[derive(Serialize, Clone, Debug, PartialEq, Deserialize, Queryable, Insertable)]
+#[diesel(table_name = votes)]
+#[serde(crate = "rocket::serde")]
+pub struct VoteTable {
+    pub name: String,
+    pub point: i16,
+}
+#[cfg(feature = "sqlx_sqlite")]
+impl Table for VoteTable {
+    fn get_identity_column_name() -> String {
+        VoteTable::get_identity_column_name()
+    }
+    fn get_table(insert: bool) -> String {
+        VoteTable::get_table(insert)
+    }
+    fn get_db_columns() -> String {
+        VoteTable::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        self.values()
+    }
+}
+#[cfg(feature = "diesel_sqlite")]
+table! {
+    votes (name) {
+        name -> Text,
+        point -> SmallInt
+    }
+}
+impl From<Vote> for VoteTable {
+    fn from(v: Vote) -> Self {
+        Self {
+            name: v.name,
+            point: i16::from(v.point),
+        }
+    }
+}
 impl ToJson for Vote {
     fn to_empty_json() -> Json<Self> {
         Json(Self::empty())
@@ -1099,7 +1170,44 @@ impl Empty for Vote {
 pub struct Criteria {
     pub criterias: Vec<Criterion>,
 }
+impl Criteria {
+    fn properties(in_parenthesis: bool) -> String {
+        Criterion::properties(in_parenthesis)
+    }
+    fn values(&self) -> String {
+        self.criterias
+            .iter()
+            .map(|c| c.to_db_row())
+            .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+            .unwrap()
+    }
+}
 
+#[cfg(feature = "sqlx_sqlite")]
+impl Table for Criteria {
+    fn get_identity_column_name() -> String {
+        String::from("name")
+    }
+    fn get_table(insert: bool) -> String {
+        Criterion::get_table(insert)
+    }
+    fn get_db_columns() -> String {
+        Criterion::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        self.values()
+    }
+}
+impl std::str::FromStr for Criteria {
+    type Err = crate::error::FromErrorKind;
+    fn from_str(v: &str) -> Result<Self, Self::Err> {
+        debug!("{:?}", v);
+        let _result: Vec<&str> = v.split(",-o-,").collect();
+        Ok(Self {
+            criterias: vec![], // TODO result.get(0).unwrap()
+        })
+    }
+}
 impl ToJson for Criteria {
     fn to_empty_json() -> Json<Self> {
         Json(Self::empty())
@@ -1111,15 +1219,25 @@ impl Empty for Criteria {
         Self { criterias: vec![] }
     }
 }
-impl Index for Criteria {}
-impl FromJsonFile for Criteria {}
-
-impl FileDir for Criteria {
-    fn get_dir() -> &'static str {
-        "criteria"
+impl IdGenerator for Criteria {
+    fn get_id(&self) -> String {
+        self.generate_id()
+    }
+    fn generate_id(&self) -> String {
+        self.get_type()
     }
 }
-#[derive(Serialize, Clone, Debug, PartialEq, Deserialize)]
+impl Selfaware for Criteria {
+    fn get_type(&self) -> String {
+        String::from("Criteria")
+    }
+
+    fn get_name(&self) -> String {
+        String::from("Criteria")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct Criterion {
     pub name: String,
@@ -1127,14 +1245,157 @@ pub struct Criterion {
     pub max: i8,
     pub weight: Option<f32>,
 }
+impl Criterion {
+    fn properties(in_parenthesis: bool) -> String {
+        if in_parenthesis {
+            String::from("( name, min, max, weight )")
+        } else {
+            String::from("name, min, max, weight")
+        }
+    }
+    fn values(&self) -> String {
+        vec![
+            "\"".to_owned() + &self.name.clone() + "\"",
+            self.min.to_string(),
+            self.max.to_string(),
+            match self.weight {
+                Some(w) => w.to_string(),
+                None => String::from("1.0"),
+            },
+        ]
+        .into_iter()
+        .reduce(|acc, e| acc + ", " + &e)
+        .unwrap()
+    }
+}
+#[cfg(feature = "sqlx_sqlite")]
+impl Table for Criterion {
+    fn get_identity_column_name() -> String {
+        String::from("name")
+    }
+    fn get_table(insert: bool) -> String {
+        if insert {
+            String::from("criteria ") + &Criterion::properties(true)
+        } else {
+            String::from("criteria ")
+        }
+    }
+    fn get_db_columns() -> String {
+        Criterion::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        self.values()
+    }
+}
+
+impl std::str::FromStr for Criterion {
+    type Err = crate::error::FromErrorKind;
+
+    fn from_str(v: &str) -> Result<Self, Self::Err> {
+        debug!("Raw criterion str: {:?}", v);
+        let result: Vec<&str> = v.split(DELIMITER).collect();
+        debug!("Split: {:?}", result);
+        Ok(Self {
+            name: from_optional_str(Some(result.get(0).expect("This index exist.").trim())),
+            min: i8::from_str(&from_optional_str(Some(
+                result.get(1).expect("This index exist.").trim(),
+            )))
+            .unwrap(),
+            max: i8::from_str(&from_optional_str(Some(
+                result.get(2).expect("This index exist.").trim(),
+            )))
+            .unwrap(),
+            weight: Some(
+                f32::from_str(&from_optional_str(Some(
+                    result.get(3).expect("This index exist.").trim(),
+                )))
+                .unwrap(),
+            ),
+        })
+    }
+}
+
+impl From<&CriterionRow> for Criterion {
+    fn from(c_row: &CriterionRow) -> Self {
+        Self {
+            name: c_row.name.clone(),
+            min: i8::try_from(c_row.min).unwrap(),
+            max: i8::try_from(c_row.max).unwrap(),
+            weight: c_row.weight,
+        }
+    }
+}
+#[cfg(not(feature = "diesel_sqlite"))]
+#[derive(Debug, Clone, Serialize, PartialEq, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct CriterionRow {
+    pub name: String,
+    pub min: i16,
+    pub max: i16,
+    pub weight: Option<f32>,
+}
+impl CriterionRow {
+    fn values(&self) -> String {
+        Criterion::from(self).values()
+    }
+}
+#[cfg(feature = "diesel_sqlite")]
+#[derive(Debug, Clone, Serialize, PartialEq, Deserialize, Queryable, Insertable)]
+#[diesel(table_name = criteria)]
+#[serde(crate = "rocket::serde")]
+pub struct CriterionRow {
+    pub name: String,
+    pub min: i16,
+    pub max: i16,
+    pub weight: Option<f32>,
+}
+#[cfg(feature = "sqlx_sqlite")]
+impl Table for CriterionRow {
+    fn get_identity_column_name() -> String {
+        Criterion::get_identity_column_name()
+    }
+    fn get_table(insert: bool) -> String {
+        Criterion::get_table(insert)
+    }
+    fn get_db_columns() -> String {
+        Criterion::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        self.values()
+    }
+}
+#[cfg(feature = "diesel_sqlite")]
+table! {
+    criteria (name) {
+        name -> Text,
+        min -> SmallInt,
+        max -> SmallInt,
+        weight -> Nullable<Float>,
+    }
+}
+
+impl From<Criterion> for CriterionRow {
+    fn from(cr: Criterion) -> Self {
+        Self {
+            name: cr.name,
+            min: i16::from(cr.min),
+            max: i16::from(cr.max),
+            weight: cr.weight,
+        }
+    }
+}
 impl Fill for Criterion {}
 impl Selfaware for Criterion {
     fn get_type(&self) -> String {
         String::from("Criterion")
     }
+
+    fn get_name(&self) -> String {
+        debug!("Criterion::get_name with trait Selfaware");
+        self.name.to_lowercase().to_owned()
+    }
 }
-impl ToJsonFile for Criterion {}
-impl FromJsonFile for Criterion {}
+
 impl IdGenerator for Criterion {
     fn get_id(&self) -> String {
         self.generate_id()
@@ -1145,20 +1406,17 @@ impl IdGenerator for Criterion {
             None => 1.0.to_string(),
         };
         [
-            self.name.to_owned(),
+            self.name.to_lowercase().to_owned(),
             self.min.to_string(),
             self.max.to_string(),
             weight,
         ]
-        .join("_")
+        .into_iter()
+        .reduce(|acc, e| acc + "_" + &e)
+        .unwrap()
     }
 }
 
-impl FileDir for Criterion {
-    fn get_dir() -> &'static str {
-        "criteria"
-    }
-}
 impl ToJson for Criterion {
     fn to_empty_json() -> Json<Self> {
         Json(Self::empty())
@@ -1175,13 +1433,13 @@ impl Empty for Criterion {
         }
     }
 }
-
 #[derive(Debug, Serialize, PartialEq, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct Users {
     pub voters: Vec<String>,
     pub candidates: Vec<String>,
 }
+
 pub async fn get_users_internal() -> Users {
     let mut voters = vec![];
     let mut candidates = vec![];
@@ -1201,39 +1459,88 @@ pub async fn get_users_internal() -> Users {
 pub struct EmojiCategories {
     pub emojis: Vec<EmojiCategory>,
 }
+impl EmojiCategories {
+    fn values(&self) -> String {
+        self.emojis
+            .to_vec()
+            .iter()
+            .map(|e| e.values())
+            .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+            .unwrap()
+    }
+}
+#[cfg(feature = "sqlx_sqlite")]
+impl Table for EmojiCategories {
+    fn get_identity_column_name() -> String {
+        EmojiCategory::get_identity_column_name()
+    }
+    fn get_table(insert: bool) -> String {
+        if insert {
+            String::from("emojis") + &EmojiCategory::properties(true)
+        } else {
+            String::from("emojis")
+        }
+    }
+    fn get_db_columns() -> String {
+        EmojiCategory::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        self.values()
+    }
+}
+impl std::str::FromStr for EmojiCategories {
+    type Err = crate::error::FromErrorKind;
+    fn from_str(v: &str) -> Result<Self, Self::Err> {
+        debug!("{:?}", v);
+        let _result: Vec<&str> = v.split(",-o-,").collect();
+        Ok(Self {
+            emojis: vec![], // TODO result.get(0).unwrap()
+        })
+    }
+}
 impl Empty for EmojiCategories {
     fn empty() -> Self {
         Self { emojis: vec![] }
     }
 }
 
-impl FileDir for EmojiCategories {
-    fn get_dir() -> &'static str {
-        "static"
-    }
-    fn get_full_path(&self, _possible_remote: bool) -> String {
-        let asset_dir = match std::env::var(ASSET_DIR) {
-            Ok(file_dir) => file_dir,
-            Err(_) => String::from("/tmp/"),
-        };
-        asset_dir + Self::get_dir()
-    }
-}
-
-impl FromJsonFile for EmojiCategories {}
-impl ToJsonFile for EmojiCategories {}
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(crate = "rocket::serde")]
 pub struct EmojiCategory {
     pub name: String,
     emojis: Vec<String>,
 }
+
 impl EmojiCategory {
     pub fn new(name: &str, emojis: &Vec<String>) -> Self {
         Self {
             name: name.to_string(),
             emojis: emojis.to_vec(),
         }
+    }
+
+    fn get_identity_column_name() -> String {
+        String::from("name")
+    }
+    fn properties(in_parenthesis: bool) -> String {
+        if in_parenthesis {
+            String::from("( name, emojis )")
+        } else {
+            String::from("name, emojis")
+        }
+    }
+    fn values(&self) -> String {
+        vec![
+            self.name.clone(),
+            self.emojis
+                .clone()
+                .into_iter()
+                .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+                .unwrap(),
+        ]
+        .into_iter()
+        .reduce(|acc, e| accumulate_strings_with_delimiter(&acc, &e))
+        .unwrap()
     }
 }
 impl IdGenerator for EmojiCategories {
@@ -1246,6 +1553,10 @@ impl IdGenerator for EmojiCategories {
 }
 impl Selfaware for EmojiCategories {
     fn get_type(&self) -> String {
+        String::from("emojis")
+    }
+
+    fn get_name(&self) -> String {
         String::from("emojis")
     }
 }

@@ -9,6 +9,7 @@ use voters_verdict::{
         get_ballots_by_candidate, get_ballots_by_voted_on, get_ballots_by_voter,
         get_ballots_by_voting, get_ballots_sorted, post_ballot,
     },
+    config::FILE_DIR,
     criteria::{get_criterias, get_criterion, post_criterion},
     plumping::{
         internal_server_error, not_found, unauthorized, unprocessable_content, version_handler,
@@ -16,7 +17,7 @@ use voters_verdict::{
     },
     routes::{API_BALLOTS, API_CRITERIA, API_USERS, API_VOTINGS},
     users::{get_user, get_users, get_users_by_type, post_user},
-    votes::{close_vote, get_full_vote, get_raw_vote, post_vote},
+    votes::{close_vote, get_full_vote, get_raw_vote, modify_voting, post_vote},
 };
 
 #[cfg(feature = "templates")]
@@ -27,26 +28,43 @@ use rocket_dyn_templates::tera::{self, Value};
 use rocket_dyn_templates::{Engines, Template};
 #[cfg(feature = "templates")]
 use std::collections::HashMap;
+#[cfg(feature = "admin")]
+use voters_verdict::templates::admin::{
+    render_admin_manage_panel, render_admin_panel, render_dev_admin_panel,
+    render_voting_admin_panel, render_voting_dev_admin_panel, render_votings_admin_panel,
+    render_votings_dev_admin_panel,
+};
 #[cfg(feature = "templates")]
 use voters_verdict::{
     config::{ASSET_DIR, ENVIRONMENT},
     routes::API_ADMIN,
     templates::{
-        render_admin_manage_panel, render_admin_panel, render_ballots_by_candidate,
-        render_ballots_by_voted_on, render_ballots_by_voter, render_ballots_sorted,
-        render_dev_admin_panel, render_voting, render_voting_index,
+        ballots::{
+            render_ballots_by_candidate, render_ballots_by_voted_on, render_ballots_by_voter,
+            render_ballots_sorted,
+        },
+        votes::{render_voting, render_voting_index},
     },
 };
+
 #[cfg(feature = "templates")]
-fn format_critera(orignal_value: &Value, _: &HashMap<String, Value>) -> tera::Result<Value> {
-    let value = String::from(orignal_value.as_str().unwrap());
-    let mut v: Vec<&str> = value.split_terminator('_').collect();
-    let weight = "(W:".to_owned() + v.pop().unwrap() + ")";
-    let max = "(Max:".to_owned() + v.pop().unwrap() + ")";
-    let min = "(Min:".to_owned() + v.pop().unwrap() + ")";
-    Ok(Value::String(
-        [v.pop().unwrap(), &min, &max, &weight].join(" "),
-    ))
+fn format_critera(original_value: &Value, _: &HashMap<String, Value>) -> tera::Result<Value> {
+    debug!(
+        "Original found value for criteria format: {}",
+        original_value
+    );
+    let value = String::from(original_value.as_str().unwrap());
+    let mut v: Vec<&str> = value.split_terminator("_").collect();
+    if v.len() >= 2 {
+        let weight = "(W:".to_owned() + v.pop().unwrap() + ")";
+        let max = "(Max:".to_owned() + v.pop().unwrap() + ")";
+        let min = "(Min:".to_owned() + v.pop().unwrap() + ")";
+        Ok(Value::String(
+            [v.pop().unwrap(), &min, &max, &weight].join(" "),
+        ))
+    } else {
+        Ok(Value::String("n/a".to_string()))
+    }
 }
 
 #[launch]
@@ -54,19 +72,13 @@ fn format_critera(orignal_value: &Value, _: &HashMap<String, Value>) -> tera::Re
 fn rocket() -> Rocket<Build> {
     #[cfg(not(test))]
     env_logger::init();
-    let admin_routes = match std::env::var(ENVIRONMENT) {
-        Ok(e) => match e.as_str() {
-            "dev" | "d" | "DEV" => routes![render_dev_admin_panel, render_admin_manage_panel],
-            _ => routes![render_admin_panel, render_admin_manage_panel],
-        },
-        Err(_) => routes![render_admin_panel, render_admin_manage_panel],
-    };
     let file_dir = match std::env::var(ASSET_DIR) {
         Ok(file_dir) => file_dir,
         Err(_) => String::from("/tmp"),
     };
     info!("Currently asset directory: {}", file_dir);
-    rocket::build()
+    print_file_dir();
+    let rocket = rocket::build()
         .register(
             "/",
             catchers![
@@ -83,8 +95,7 @@ fn rocket() -> Rocket<Build> {
                 .register_filter("format_criteria", format_critera);
         }))
         .mount("/", routes![login])
-        .mount(API_ADMIN, admin_routes)
-        .mount("/votings", routes![render_voting_index, render_voting,])
+        .mount("/votings", routes![render_voting_index, render_voting])
         .mount(
             "/ballots",
             routes![
@@ -117,12 +128,44 @@ fn rocket() -> Rocket<Build> {
         )
         .mount(
             API_VOTINGS,
-            routes![get_raw_vote, post_vote, get_full_vote, close_vote],
-        )
+            routes![
+                get_raw_vote,
+                post_vote,
+                get_full_vote,
+                close_vote,
+                modify_voting
+            ],
+        );
+
+    #[cfg(feature = "admin")]
+    let rocket = rocket.mount(API_ADMIN, build_admin_routes());
+    rocket
+}
+#[cfg(feature = "admin")]
+fn build_admin_routes() -> Vec<rocket::Route> {
+    let productive_admin_routes = routes![
+        render_admin_panel,
+        render_admin_manage_panel,
+        render_voting_admin_panel,
+        render_votings_admin_panel
+    ];
+    match std::env::var(ENVIRONMENT) {
+        Ok(e) => match e.as_str() {
+            "dev" | "d" | "DEV" => routes![
+                render_dev_admin_panel,
+                render_admin_manage_panel,
+                render_voting_dev_admin_panel,
+                render_votings_dev_admin_panel
+            ],
+            _ => productive_admin_routes,
+        },
+        Err(_) => productive_admin_routes,
+    }
 }
 #[launch]
 #[cfg(not(feature = "templates"))]
 fn rocket() -> Rocket<Build> {
+    print_file_dir();
     rocket::build()
         .register(
             "/",
@@ -156,7 +199,13 @@ fn rocket() -> Rocket<Build> {
         )
         .mount(
             API_VOTINGS,
-            routes![get_raw_vote, get_full_vote, post_vote, close_vote],
+            routes![
+                get_raw_vote,
+                get_full_vote,
+                post_vote,
+                close_vote,
+                modify_voting
+            ],
         )
 }
 #[get("/")]
@@ -165,6 +214,12 @@ fn login() -> Redirect {
     Redirect::to("/votings")
 }
 
+fn print_file_dir() {
+    match std::env::var(FILE_DIR) {
+        Ok(folder) => info!("Saving data in: {:?}", folder),
+        Err(_) => info!("No specified dir detected, using tmp folder"),
+    };
+}
 #[cfg(test)]
 mod test {
     use super::rocket;

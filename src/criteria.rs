@@ -5,13 +5,15 @@ use rocket::{
 };
 
 use crate::{
-    common::{Criteria, Criterion, Empty, Fill, Index, ToJsonFile},
-    validator::compare_styles_file_names,
+    common::{Criteria, Criterion, Empty, Fill},
+    persistence::ToPersistence,
+    serialize::ToStorage,
+    validator::compare_pattern_file_names,
 };
 
 #[get("/", format = "application/json")]
 pub async fn get_criterias() -> Result<Json<Vec<String>>, Conflict<String>> {
-    match Criteria::empty().index().await {
+    match Criteria::empty().list().await {
         Ok(done) => Ok(Json(done)),
         Err(e) => Err(Conflict(e.to_string())),
     }
@@ -19,12 +21,12 @@ pub async fn get_criterias() -> Result<Json<Vec<String>>, Conflict<String>> {
 
 #[get("/<criterion>")]
 pub async fn get_criterion(criterion: &str) -> Result<Json<Vec<Criterion>>, NotFound<String>> {
-    match Criteria::empty().index().await {
+    match Criteria::empty().list().await {
         Ok(done) => {
             let possible_criteria = done
                 .iter()
-                .filter(|c| compare_styles_file_names(c, criterion))
-                .map(|c| Criterion::fill(c, false));
+                .filter(|c| compare_pattern_file_names(c, criterion))
+                .map(|c| Criterion::fill(c, false, "criteria"));
             let all_criterias = futures::future::join_all(possible_criteria).await;
             Ok(Json(all_criterias))
         }
@@ -34,7 +36,7 @@ pub async fn get_criterion(criterion: &str) -> Result<Json<Vec<Criterion>>, NotF
 
 #[post("/", format = "application/json", data = "<criterion>")]
 pub async fn post_criterion(criterion: Json<Criterion>) -> Result<String, Conflict<String>> {
-    match criterion.into_inner().to_json_file().await {
+    match criterion.into_inner().save().await {
         Ok(done) => Ok(done),
         Err(e) => Err(Conflict(e.to_string())),
     }
@@ -58,10 +60,13 @@ mod test {
 
     #[test]
     fn test_string_compare() {
-        assert_eq!(compare_styles_file_names("test_0_15_15", "test"), true);
-        assert_eq!(compare_styles_file_names("test_0_15_15", "Test_0"), true);
-        assert_eq!(compare_styles_file_names("test_0_15_15", "test_0"), true);
-        assert_eq!(compare_styles_file_names("test_0_15_15", "test_0_15"), true);
+        assert_eq!(compare_pattern_file_names("test_0_15_15", "test"), true);
+        assert_eq!(compare_pattern_file_names("test_0_15_15", "Test_0"), true);
+        assert_eq!(compare_pattern_file_names("test_0_15_15", "test_0"), true);
+        assert_eq!(
+            compare_pattern_file_names("test_0_15_15", "test_0_15"),
+            true
+        );
     }
     #[rocket::async_test]
     async fn get_single_criterion() {

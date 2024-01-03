@@ -5,8 +5,10 @@ use rocket::{
     FromFormField,
 };
 
-use crate::common::{
-    get_users_internal, Candidate, Empty, FromJsonFile, IdGenerator, IsUnique, ToJsonFile, Users,
+use crate::{
+    common::{get_users_internal, Candidate, Empty, Fill, IdGenerator, Users},
+    persistence::Path,
+    serialize::ToStorage,
 };
 
 #[derive(Debug, PartialEq, FromFormField)]
@@ -31,7 +33,7 @@ pub async fn get_users() -> Json<Users> {
 #[get("/<id>")]
 pub async fn get_user(id: &str) -> Result<Json<Candidate>, NotFound<String>> {
     match Candidate::empty().is_unique(id).await {
-        Ok(long_id) => Ok(Candidate::from_json_file(&Candidate::empty(), &long_id, false).await),
+        Ok(long_id) => Ok(Candidate::fill_json(&long_id, false, "candidate").await),
         Err(_) => Err(NotFound(id.to_owned() + " not found.")),
     }
 }
@@ -39,7 +41,7 @@ pub async fn get_user(id: &str) -> Result<Json<Candidate>, NotFound<String>> {
 pub async fn post_user(user: Json<Candidate>) -> Result<String, Conflict<String>> {
     let mut payload = user.into_inner();
     payload.set_id(&payload.generate_id());
-    match payload.to_json_file().await {
+    match payload.save().await {
         Ok(done) => Ok(done),
         Err(e) => Err(Conflict(e.to_string())),
     }

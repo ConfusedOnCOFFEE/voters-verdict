@@ -1,20 +1,26 @@
+#[cfg(feature = "db")]
+use crate::db::common::Query;
+use crate::{
+    common::{
+        from_optional_str, Ballot, Candidate, CastBallots, Criterion, Empty, Fill, IdGenerator,
+        KnownBallots, QueryableExt, Selfaware, Table as VVTable, Vote, VoteKind, Voting,
+    },
+    error::VoteErrorKind,
+    persistence::ToPersistence,
+    routes::API_BALLOTS,
+    validator::{compare_pattern_file_names, validate},
+};
 use chrono::prelude::*;
+#[cfg(feature = "diesel_sqlite")]
+use diesel::{prelude::*, table};
 use rocket::{
-    get,
+    debug, error, get,
     http::Status,
     post,
     request::{FromRequest, Outcome},
-    response::status::Unauthorized,
+    response::status::{Created, Unauthorized},
     serde::{json::Json, Deserialize, Serialize},
     Request,
-};
-
-use crate::{
-    common::{
-        Ballot, Candidate, CastBallots, Criterion, Empty, Fill, Index, KnownBallots, ToJsonFile,
-        Vote, VoteErrorKind, VoteKind, Voting,
-    },
-    validator::{compare_styles_file_names, validate},
 };
 
 #[derive(Debug, Serialize, PartialEq, Deserialize, Clone)]
@@ -28,7 +34,7 @@ impl<'r> FromRequest<'r> for Voter<'r> {
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let default_voting = Voting::empty();
         let voting: Voting = match req.uri().path().segments().get(3) {
-            Some(v) => Voting::fill(v, false).await,
+            Some(v) => Voting::fill(v, false, "voting").await,
             None => default_voting,
         };
         fn is_correct_invite_code(key: &str, voting: &Voting) -> bool {
@@ -68,7 +74,7 @@ impl<'a> From<Voter<'a>> for Candidate {
 
 #[get("/<voting>/ballots")]
 pub async fn get_ballots_by_voting(voting: &str) -> Json<CastBallots> {
-    CastBallots::fill_json(voting, false).await
+    CastBallots::fill_json(voting, false, "CBallots").await
 }
 
 #[post("/<voting_id>", format = "application/json", data = "<ballot>")]
@@ -76,7 +82,7 @@ pub async fn post_ballot<'r>(
     voter: Voter<'r>,
     voting_id: &str,
     ballot: Json<Ballot>,
-) -> Result<String, Status> {
+) -> Result<Created<&'static str>, Status> {
     if validate(
         VoteKind::Ballot(ballot.clone().into_inner()),
         voting_id,
@@ -94,12 +100,75 @@ pub async fn post_ballot<'r>(
                 ballots: vec![inner_ballot],
             }],
         };
-        match cast_ballot.to_json_file().await {
-            Ok(done) => Ok(done),
+
+        #[cfg(not(feature = "sqlx_sqlite"))]
+        match cast_ballot.save().await {
+            Ok(done) => Ok(Created::new(
+                API_BALLOTS.to_owned() + "/" + voting_id + "/voter/" + voter.0,
+            )),
+            Err(_e) => Err(Status::UnprocessableEntity),
+        }
+        #[cfg(feature = "sqlx_sqlite")]
+        match BallotsTable::from(CompleteBallotsTable::aggregate_all(cast_ballot).await)
+            .save()
+            .await
+        {
+            Ok(_done) => Ok(Created::new(
+                API_BALLOTS.to_owned() + "/" + voting_id + "/voter/" + voter.0,
+            )),
             Err(_e) => Err(Status::UnprocessableEntity),
         }
     } else {
         Err(Status::UnprocessableEntity)
+    }
+}
+#[cfg(feature = "db")]
+impl CompleteBallotsTable {
+    async fn aggregate_all(c_B: CastBallots) -> Self {
+        let ballots = c_B.ballots.first().unwrap().ballots.first().unwrap();
+        let voter = &c_B.ballots.first().unwrap().voter;
+        let votes = &ballots.votes;
+        let sum = sum_up_sum(&votes.to_vec());
+        let voting = Voting::fill(&c_B.voting.clone().unwrap(), false, "voting").await;
+        let weighted = sum_up_weight(&votes.to_vec(), &voting.categories);
+        let mean = f32::from(sum) / votes.len() as f32;
+        Self {
+            categories: voting.categories,
+            voter: voter.to_string(),
+            voting: c_B.voting.unwrap(),
+            candidate: String::from(ballots.candidate.as_str()),
+            sum: i16::from(sum),
+            weighted: weighted,
+            mean: mean,
+            notes: match ballots.notes.clone() {
+                Some(n) => n,
+                None => String::from("n/a"),
+            },
+            votes: match rocket::serde::json::to_string(&ballots.votes) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    String::new()
+                }
+            },
+            voted_on: ballots.voted_on.unwrap(),
+        }
+    }
+}
+#[cfg(feature = "db")]
+impl From<CompleteBallotsTable> for BallotsTable {
+    fn from(cB: CompleteBallotsTable) -> Self {
+        Self {
+            voter: cB.voter,
+            voting: cB.voting,
+            candidate: cB.candidate,
+            sum: cB.sum,
+            weighted: cB.weighted,
+            mean: cB.mean,
+            notes: cB.notes,
+            votes: cB.votes,
+            voted_on: cB.voted_on,
+        }
     }
 }
 
@@ -116,6 +185,7 @@ pub struct TableRowSum {
 #[derive(Serialize, Debug, PartialEq, Clone, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct TableRow {
+    pub voting: String,
     pub voter: String,
     pub candidate: String,
     pub sum: i8,
@@ -126,7 +196,202 @@ pub struct TableRow {
     pub voted_on: DateTime<Utc>,
 }
 
-// TODO Requires split and refactor
+#[cfg(not(feature = "diesel_sqlite"))]
+#[derive(Serialize, Debug, PartialEq, Clone, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct BallotsTable {
+    pub voting: String,
+    pub voter: String,
+    pub candidate: String,
+    pub sum: i16,
+    pub weighted: f32,
+    pub mean: f32,
+    notes: String,
+    votes: String,
+    pub voted_on: DateTime<Utc>,
+}
+#[derive(Serialize, Debug, PartialEq, Clone, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct CompleteBallotsTable {
+    pub categories: Vec<Criterion>,
+    pub voting: String,
+    pub voter: String,
+    pub candidate: String,
+    pub sum: i16,
+    pub weighted: f32,
+    pub mean: f32,
+    notes: String,
+    votes: String,
+    pub voted_on: DateTime<Utc>,
+}
+impl BallotsTable {
+    fn values(&self) -> String {
+        format!(
+            "'{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}'",
+            self.get_id(),
+            self.candidate,
+            self.voter,
+            self.sum,
+            self.weighted,
+            self.mean,
+            self.notes,
+            self.votes,
+            self.voted_on.to_string()
+        )
+    }
+}
+impl Query for BallotsTable {}
+impl QueryableExt for BallotsTable {}
+impl std::str::FromStr for BallotsTable {
+    type Err = crate::error::FromErrorKind;
+    fn from_str(v: &str) -> Result<Self, Self::Err> {
+        debug!("{:?}", v);
+        let result: Vec<&str> = v.split(",-o-,").collect();
+        debug!("{:?}", result);
+        match CastBallots::from_str(v) {
+            Ok(_c_b) => Ok(Self {
+                voter: from_optional_str(result.get(2).copied()),
+                voting: result
+                    .get(0)
+                    .copied()
+                    .expect("The structure is always 0-1-2")
+                    .split_once('-')
+                    .unwrap()
+                    .0
+                    .to_string(),
+                candidate: from_optional_str(result.get(1).copied()),
+                sum: i16::from_str(&from_optional_str(result.get(3).copied())).unwrap(),
+                weighted: f32::from_str(&from_optional_str(result.get(4).copied())).unwrap(),
+                mean: f32::from_str(&from_optional_str(result.get(5).copied())).unwrap(),
+                notes: from_optional_str(result.get(6).copied()),
+                votes: from_optional_str(result.get(7).copied()),
+                voted_on: DateTime::from_str(&from_optional_str(result.get(8).copied())).unwrap(),
+            }),
+            Err(_) => Ok(Self::empty()),
+        }
+    }
+}
+#[cfg(feature = "sqlx_sqlite")]
+impl VVTable for BallotsTable {
+    fn get_identity_column_name() -> String {
+        String::from("human_identifier")
+    }
+    fn get_table(insert: bool) -> String {
+        if insert {
+            String::from("ballots") + &CastBallots::properties(true)
+        } else {
+            String::from("ballots")
+        }
+    }
+    fn get_db_columns() -> String {
+        CastBallots::properties(false)
+    }
+    fn to_db_row(&self) -> String {
+        self.values()
+    }
+}
+impl Empty for BallotsTable {
+    fn empty() -> Self {
+        Self {
+            voting: String::new(),
+            voter: String::new(),
+            candidate: String::new(),
+            sum: 0,
+            weighted: 0.0,
+            mean: 0.0,
+            notes: String::new(),
+            votes: String::new(),
+            voted_on: Utc::now(),
+        }
+    }
+}
+
+impl IdGenerator for BallotsTable {
+    fn get_id(&self) -> String {
+        self.generate_id()
+    }
+    fn generate_id(&self) -> String {
+        self.voting.to_lowercase()
+            + "-"
+            + &self.voter.to_lowercase()
+            + "-"
+            + &self.candidate.to_lowercase()
+    }
+}
+impl Fill for BallotsTable {}
+impl crate::serialize::FromStorage for BallotsTable {}
+impl crate::persistence::FromPersistence for BallotsTable {}
+impl crate::persistence::Path for BallotsTable {}
+impl Selfaware for BallotsTable {
+    fn get_type(&self) -> String {
+        String::from("CBallots")
+    }
+
+    fn get_name(&self) -> String {
+        String::from("CBallots")
+    }
+}
+
+#[cfg(feature = "diesel_sqlite")]
+#[derive(Serialize, Debug, PartialEq, Clone, Deserialize, Queryable, Insertable, Selectable)]
+#[diesel(table_name = ballots )]
+#[serde(crate = "rocket::serde")]
+pub struct BallotsTable {
+    pub voter: String,
+    pub candidate: String,
+    pub sum: i16,
+    pub weighted: f32,
+    pub mean: f32,
+    notes: String,
+    votes: String,
+    pub voted_on: DateTime<Utc>,
+}
+#[cfg(feature = "db")]
+impl From<TableRow> for BallotsTable {
+    fn from(tr: TableRow) -> Self {
+        Self {
+            voting: tr.voting,
+            voter: tr.voter,
+            candidate: tr.candidate,
+            sum: i16::from(tr.sum),
+            weighted: tr.weighted,
+            mean: tr.mean,
+            notes: tr.notes,
+            votes: match rocket::serde::json::to_string(&tr.votes) {
+                Ok(stringified) => stringified,
+                Err(e) => {
+                    error!("{:?}", e);
+                    String::new()
+                }
+            },
+            voted_on: tr.voted_on,
+        }
+    }
+}
+
+#[cfg(feature = "db")]
+impl From<&BallotsTable> for TableRow {
+    fn from(b_t: &BallotsTable) -> Self {
+        Self {
+            voting: b_t.voting.clone(),
+            voter: b_t.voter.clone(),
+            candidate: b_t.candidate.clone(),
+            sum: i8::try_from(b_t.sum).unwrap(),
+            weighted: b_t.weighted,
+            mean: b_t.mean,
+            notes: b_t.notes.clone(),
+            votes: match rocket::serde::json::from_str::<Vec<Vote>>(&b_t.votes) {
+                Ok(vs) => vs,
+                Err(e) => {
+                    error!("From string votes to struct votes didnt work. {:?}", e);
+                    vec![]
+                }
+            },
+            voted_on: b_t.voted_on,
+        }
+    }
+}
+#[cfg(feature = "file")]
 impl TableRow {
     fn from_cast_ballots(
         cast_ballots: Vec<CastBallots>,
@@ -138,7 +403,7 @@ impl TableRow {
         }
     }
 }
-
+#[cfg(feature = "file")]
 fn map_ballots(ballots: Vec<CastBallots>, categories: &Vec<Criterion>) -> Option<Vec<TableRow>> {
     ballots
         .iter()
@@ -146,7 +411,7 @@ fn map_ballots(ballots: Vec<CastBallots>, categories: &Vec<Criterion>) -> Option
             match c
                 .ballots
                 .iter()
-                .map(|b| map_ballot(b.clone(), categories))
+                .map(|b| map_ballot(b.clone(), categories, &c.voting.clone().unwrap()))
                 .collect::<Vec<Vec<TableRow>>>()
                 .into_iter()
                 .reduce(|c, n| [c, n].concat())
@@ -157,7 +422,12 @@ fn map_ballots(ballots: Vec<CastBallots>, categories: &Vec<Criterion>) -> Option
         })
         .reduce(|c, n| [c, n].concat())
 }
-fn map_ballot(known_ballot: KnownBallots, categories: &Vec<Criterion>) -> Vec<TableRow> {
+#[cfg(feature = "file")]
+fn map_ballot(
+    known_ballot: KnownBallots,
+    categories: &Vec<Criterion>,
+    voting: &str,
+) -> Vec<TableRow> {
     known_ballot
         .ballots
         .iter()
@@ -180,6 +450,7 @@ fn map_ballot(known_ballot: KnownBallots, categories: &Vec<Criterion>) -> Vec<Ta
             }
         })
         .map(|v| TableRow {
+            voting: voting.to_string(),
             voter: String::from(known_ballot.voter.as_str()),
             votes: v.votes,
             candidate: v.candidate,
@@ -205,7 +476,7 @@ fn sum_up_weight(given_votes: &Vec<Vote>, categories: &Vec<Criterion>) -> f32 {
         .map(|vote| {
             let category = categories.iter().find(|c| vote.name == c.name).unwrap();
             let weight_to_use = match category.weight {
-                Some(w) => f32::from(w) * 0.1,
+                Some(w) => w * 0.1,
                 None => 1.0,
             };
             f32::from(vote.point) * weight_to_use
@@ -241,14 +512,28 @@ fn verify_correct_voting_id(
 async fn collect_ballots(voting_id: &str) -> Table<Criterion, TableRow> {
     let lowercased_voting_id = voting_id.to_lowercase();
     let loaded_ballots = CastBallots::empty().list().await.unwrap();
+    #[cfg(not(feature = "sqlx_sqlite"))]
     let filtered_ballots: Vec<_> = loaded_ballots
         .iter()
         .filter(|b| b.starts_with(&lowercased_voting_id))
-        .map(|b| CastBallots::fill(b, true))
+        .map(|b| CastBallots::fill(b, true, "CBallots"))
         .collect();
-    let collected_ballots: Vec<CastBallots> = futures::future::join_all(filtered_ballots).await;
-    let voting = Voting::fill(&lowercased_voting_id, false).await;
+    #[cfg(feature = "sqlx_sqlite")]
+    let filtered_ballots: Vec<_> = loaded_ballots
+        .iter()
+        .filter(|b| b.starts_with(&lowercased_voting_id))
+        .map(|b| BallotsTable::fill(b, true, "CBallots"))
+        .collect();
+    let collected_ballots: Vec<_> = futures::future::join_all(filtered_ballots).await;
+    let voting = Voting::fill(&lowercased_voting_id, false, "voting").await;
+    debug!("{:?}", collected_ballots);
+    #[cfg(not(feature = "sqlx_sqlite"))]
     let ballots = TableRow::from_cast_ballots(collected_ballots, &voting.categories);
+    #[cfg(feature = "sqlx_sqlite")]
+    let ballots = collected_ballots
+        .iter()
+        .map(|b| TableRow::from(b))
+        .collect();
     verify_correct_voting_id(voting, &lowercased_voting_id, ballots)
 }
 
@@ -258,7 +543,7 @@ pub async fn get_ballots_by_voted_on(voting_id: &str) -> Json<Table<Criterion, T
 }
 pub async fn ballots_by_voted_on(voting_id: &str) -> Table<Criterion, TableRow> {
     let mut table = collect_ballots(voting_id).await;
-    if table.rows.len() != 0 {
+    if !table.rows.is_empty() {
         table.rows.sort_by(|p, n| p.voted_on.cmp(&n.voted_on));
     }
     table
@@ -270,7 +555,7 @@ pub async fn get_ballots_sorted(voting_id: &str, sort: &str) -> Json<Table<Crite
 }
 pub async fn ballots_sorted(voting_id: &str, sort: &str) -> Table<Criterion, TableRow> {
     let mut table = collect_ballots(voting_id).await;
-    if table.rows.len() != 0 {
+    if !table.rows.is_empty() {
         table.rows.sort_by(|p, n| match sort {
             "sum" => p.sum.cmp(&n.sum),
             "mean" => p.mean.total_cmp(&n.mean),
@@ -289,13 +574,13 @@ pub async fn get_ballots_by_voter(
     Json(ballots_by_voter(voting_id, voter).await)
 }
 pub async fn ballots_by_voter(voting_id: &str, voter: &str) -> Table<Criterion, TableRow> {
-    let voting = Voting::fill(voting_id, false).await;
+    let voting = Voting::fill(voting_id, false, "voting").await;
     let ballots: Vec<TableRow> = collect_ballots(voting_id)
         .await
         .rows
         .iter()
-        .filter(|b| compare_styles_file_names(&b.voter, voter))
-        .map(|b| b.clone())
+        .filter(|b| compare_pattern_file_names(&b.voter, voter))
+        .cloned()
         .collect();
     Table::<Criterion, TableRow>::new(voting.categories, ballots)
 }
@@ -308,13 +593,13 @@ pub async fn get_ballots_by_candidate(
     Json(ballots_by_candidate(voting_id, candidate).await)
 }
 pub async fn ballots_by_candidate(voting_id: &str, candidate: &str) -> Table<Criterion, TableRow> {
-    let voting = Voting::fill(voting_id, false).await;
+    let voting = Voting::fill(voting_id, false, "voting").await;
     let ballots: Vec<TableRow> = collect_ballots(voting_id)
         .await
         .rows
         .iter()
-        .filter(|b| compare_styles_file_names(&b.candidate, candidate))
-        .map(|b| b.clone())
+        .filter(|b| compare_pattern_file_names(&b.candidate, candidate))
+        .cloned()
         .collect();
     Table::<Criterion, TableRow>::new(voting.categories, ballots)
 }
