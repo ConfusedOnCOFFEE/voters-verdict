@@ -1,18 +1,23 @@
 #!/bin/bash
 
 VOTERS_VERDICT_DATE_DEPLOY=$(date +"%d.%m.%Y")
-
+log=$RUST_LOG
 echo_help_msg() {
     echo "$0 helps you to build and setup your voting machine.
 
     Subcommands:
 
-     c|container   Builds the contianer with the desired tag, where ARG1 is container_name:container_tag
-                   This requires CONTAINER_ENGINE variable to be set with docker or podman.
-     up            Uses the compose.yml to build and run the container.
-     t|test        Runs cargo tests.
-     r|run         Runs the binary of the server in debug compilation.
-
+     c|container               Builds the contianer with the desired tag, where ARG1 is container_name:container_tag
+                               This requires CONTAINER_ENGINE variable to be set with docker or podman.
+     up                        Uses the compose.yml to build and run the container.
+     t|test                    Runs cargo tests.
+     r|run                     Runs the binary of the server in debug compilation.
+     db                        Short steps for diesel-cli.
+     db:s, diesel:setup        Setup diesel.
+     db:r, diesel:run          Run DB migration.
+     db:reset, diesel:reset    Reest DB.
+     db:g, diesel:generate     Generate a new DB migration step.
+     db:redo, diesel:redo      Redo a complete DB migratin.
 
      Please take a look at src/config.rs. The following list is just the mandatory stuff.
      ENVIRONMENT Variable              Default
@@ -31,6 +36,7 @@ export VOTERS_VERDICT_ENVIRONMENT=test
 export VOTERS_VERDICT_ADMIN_TOKEN=111
 export VOTERS_VERDICT_MAINTAINER_TOKEN=123
 
+echo "We have log level: $log"
 case "$1" in
     "help"|"h"|"-h"|"--help")
         echo_help_msg
@@ -54,11 +60,34 @@ case "$1" in
         fi
         ;;
     "t"|"test")
-        cargo test --bin voters-verdict-machine --features=templates
-        cargo test --features=templates
+        cargo test --bin voters-verdict-machine --features=admin,db,sqlx_sqlite
+        ;;
+    "fix")
+        cargo fix --bin "voters-verdict-machine" --features="admin,db,sqlx_sqlite"
         ;;
     "r"|"run")
-        cargo run --bin voters-verdict-machine --features=templates
+        RUST_LOG=$log DATABASE_URL=sqlite://db/db.sqlite VOTERS_VERDICT_SQLITE_CONNECTION=db/db.sqlite cargo run --bin voters-verdict-machine --features=admin,db,sqlx_sqlite
+        ;;
+    "db:s"|"diesel:setup")
+        DATABASE_URL="db/db.sqlite" diesel setup
+        ;;
+    "db:r"|"diesel:run")
+        DATABASE_URL="db/db.sqlite" diesel migration run
+        ;;
+    "db:reset"|"diesel:reset")
+        DATABASE_URL="db/db.sqlite" diesel database reset
+        ;;
+    "db:g"|"diesel:generate")
+        DATABASE_URL="db/db.sqlite" diesel migration generate $2
+        ;;
+    "db:redo"|"diesel:redo")
+        DATABASE_URL="db/db.sqlite" diesel migration --migration-dir migrations/ redo
+        ;;
+    "sql3")
+        sqlite3 db/db.sqlite
+        ;;
+    "w")
+        DATABASE_URL="db/db.sqlite" cargo-watch -x 'run --features=admin,db,sqlx_sqlite'
         ;;
     *)
         echo_help_msg
