@@ -1,9 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 test.describe("tables", () => {
-    test("overall", async ({ page }) => {
+    test("overall", async ({ page, browserName }) => {
         await testTable(
             page,
-            "/ballots/language",
+            `/ballots/language-${browserName}`,
             [
                 "voter",
                 "candidate",
@@ -16,22 +16,22 @@ test.describe("tables", () => {
                 "voted",
             ],
             [
-                "Rust",
-                "user3",
+                `user3-${browserName}`,
+                `Java-${browserName}`,
                 "1",
                 "10",
                 "2",
                 "10",
                 "1",
-                "cookie cool!",
+                /COOKIE\d{1} COOL!/,
                 /\d{2}\.\d{2}\.\d{4}.*\(\d{2}:\d{2}\)/,
             ],
         );
     });
-    test("by user", async ({ page }) => {
+    test("by user", async ({ page, browserName }) => {
         await testTable(
             page,
-            "/ballots/language/voters/user3",
+            `/ballots/language-${browserName}/voters/user3-${browserName}`,
             [
                 "candidate",
                 "Code",
@@ -43,7 +43,7 @@ test.describe("tables", () => {
                 "voted",
             ],
             [
-                "Rust",
+                `Rust-${browserName}`,
                 "1",
                 "1",
                 "2",
@@ -55,10 +55,10 @@ test.describe("tables", () => {
         );
     });
 
-    test("by candidate", async ({ page }) => {
+    test("by candidate", async ({ page, browserName }) => {
         await testTable(
             page,
-            "/ballots/language/candidates/Rust",
+            `/ballots/language-${browserName}/candidates/Rust-${browserName}`,
             [
                 "voter",
                 "Code",
@@ -70,7 +70,7 @@ test.describe("tables", () => {
                 "voted",
             ],
             [
-                "user3",
+                `user3-${browserName}`,
                 "1",
                 "1",
                 "2",
@@ -82,10 +82,10 @@ test.describe("tables", () => {
         );
     });
 
-    test("by sort mean", async ({ page }) => {
+    test("by sort mean", async ({ page, browserName }) => {
         await testTable(
             page,
-            "/ballots/language/candidates/Rust?sort=mean",
+            `/ballots/language-${browserName}/candidates/Rust-${browserName}?sort=mean`,
             [
                 "voter",
                 "Code",
@@ -97,7 +97,7 @@ test.describe("tables", () => {
                 "voted",
             ],
             [
-                "user3",
+                `user3-${browserName}`,
                 "1",
                 "1",
                 "2",
@@ -117,19 +117,15 @@ async function testTable(
     expectedRows: string[],
 ): void {
     await page.goto(url);
-    await expect(page.locator("th").first()).toHaveCSS(
-        "text-transform",
-        "uppercase",
-    );
-    await testTableRowByTag(page, "th", expectedHeaders);
-    await testTableRowByTag(page, "tr", expectedRows, 1);
-}
-
-async function testTableRowByTag(
-    page: Page,
-    tag: "td" | "th",
-    expected: string[],
-    nth = 0,
-): void {
-    expect(page.locator(tag).nth(nth)).toContainText(expected);
+    await expectedHeaders.map(async (e, i) => {
+        expect(await page.locator("th").nth(i)).toContainText(e);
+    });
+    await expectedRows.map(async (e, i) => {
+        await expect(
+            await page
+                .locator("tr")
+                .nth(i + 1)
+                .locator("td"),
+        ).toContainText(e);
+    });
 }

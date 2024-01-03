@@ -38,10 +38,12 @@ async function createCriteria(page: Page, name: String): void {
     await page.getByLabel("Minimum points").selectOption("1");
     await page.getByLabel("Maximum points").selectOption("10");
     await page.getByLabel("Weight in percentage").selectOption("5");
+    await page.on("response", (data) => expect(data.ok()).toBe(true));
     await page.getByRole("button", { name: "Create criteria" }).click();
 }
 async function createUser(page: Page, name: String, type: String): void {
     await page.locator("#user-name").fill(name);
     await page.getByLabel("User type").selectOption(type);
+    await page.on("response", (data) => expect(data.ok()).toBe(true));
     await page.getByRole("button", { name: "Create user" }).click();
 }
