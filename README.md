@@ -82,10 +82,13 @@ This can be changed in 'src/config';
 | Key                                 | Description                                                                                               |
 |-------------------------------------|-----------------------------------------------------------------------------------------------------------|
 | VOTERS_VERDICT_DEFAULT_VOTE_RUNNING | Setting the environment (DEV, INT, PROD,...)                                                              |
-| VOTERS_VERDICT_STORAGE_MODE                | Used to tell the server, if file(2,file), database(1,db) or remote(3,remote) storage mode should be used. |
-| VOTERS_VERDICT_DB_URL                      | Give DB URL if STORAGE_MODE=1                                                                             |
-| VOTERS_VERDICT_REMOTE_STORAGE              | Give URL if STORAGE_MODE=3                                                                                |
-| VOTERS_VERDICT_SELF_CERT                   | Used to tell the server, for a self signed cert.                                                          |
+| VOTERS_VERDICT_STORAGE_MODE         | Used to tell the server, if file(2,file), database(1,db) or remote(3,remote) storage mode should be used. |
+| VOTERS_VERDICT_DB_URL               | Give DB URL if STORAGE_MODE=1                                                                             |
+| VOTERS_VERDICT_REMOTE_STORAGE       | Give URL if STORAGE_MODE=3                                                                                |
+| VOTERS_VERDICT_REMOTE_AUTH          | Give credentials if STORAGE_MODE=2                                                                        |
+| VOTERS_VERDICT_SQLITE_CONNECTION    | Path to sqlite.                                                                                           |
+| VOTERS_VERDICT_SELF_CERT            | Used to tell the server, for a self signed cert.                                                          |
+| DATABASE_URL                        | Path to sqlite, in pattern "sqlite://[PATH]"                                                              |
 
 
 # Development 
@@ -111,6 +114,7 @@ CastBallots -> KnownBallots -> Ballot > Vec<Vote>
     - voted_on
     - votes
   - Vote (Point of one available category)
+  - Various Ballots which contains the aggregated ballot with all details, used for table "ballots"
 - Point
 
 ## API Routes
@@ -121,9 +125,11 @@ Console log from the inital startup:
 (login) GET /
 (version_handler) GET /info/version
 
-// ADMIN
+// ADMIN requres token as queryParam with AuthGuard.
 (render_admin_panel) GET /admin/
 (render_admin_manage_panel) GET /admin/manage
+(render_votings_dev_admin_panel) GET /admin/votings
+(render_voting_dev_admin_panel) GET /admin/votings/<voting>
 
 // Serve CSS, JS and emojis.json
 (FileServer: static) GET /static/<path..>
@@ -149,11 +155,11 @@ Console log from the inital startup:
 // Voting
 (get_raw_vote) GET /api/v1/votings/raw/<voting>
 (get_full_vote) GET /api/v1/votings/raw/<voting>?full
-// POST
+// POST requires invite_code
 (post_vote) POST /api/v1/votings/ application/json
-// PUT
-(close_vote) PUT /api/v1/votings/<voting>/close?<token>
-
+// PUT requires admin token
+(modify_voting) PUT /api/v1/votings/<voting>/add application/json
+(close_vote) PUT /api/v1/votings/<voting>/close
 // Filtered data from a voting
 (get_ballots_by_voted_on) GET /api/v1/ballots/<voting_id>
 (get_ballots_by_voting) GET /api/v1/ballots/<voting>/ballots
@@ -168,6 +174,18 @@ Console log from the inital startup:
 (get_criterion) GET /api/v1/criteria/<criterion>
 // POST
 (post_criterion) POST /api/v1/criteria/ application/json
+```
+
+## SQLITE
+
+Dependencies:
+```
+sudo apt-get install sqlite3 libsqlite3-dev
+```
+
+```
+cargo install diesel_cli --no-default-features --features sqlite
+DATABASE_URL="db/diesel/db.sqlite" diesel migration --migration-dir db/diesel/migrations redo
 ```
 
 
