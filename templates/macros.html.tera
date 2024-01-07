@@ -6,10 +6,10 @@
   <input
     style="background-color:{{color.fields}};color:{{color.selection}}"
     max-length="23"
-    pattern="[a-zA-Z0-9\.< >\)\(\!\?]+"
+    pattern="[a-z0-9\.< >\)\(\!\?]+"
     id="{{id}}"
     type="{{type}}" />
-  <p style="font-size: 10px">Pattern: [a-zA-Z0-9\.< >\)\(\!\?]+</p>
+  <p style="font-size: 10px">Pattern: [a-z0-9\.< >\)\(\!\?]+</p>
 </fieldset>
 {% endmacro %}
 
@@ -20,13 +20,13 @@
   </label>
   {% if required %}
   <input
-    pattern="[a-zA-Z0-9\.\!-\?]+"
+    pattern="[a-z0-9\.\!-\?]+"
     max-length="23"
     required
     id="{{id}}" type="{{type}}" />
   {% else %}
   <input
-    pattern="[a-zA-Z0-9\.\!-\?]+"
+    pattern="[a-z0-9\.\!-\?]+"
     max-length="23"
     id="{{id}}"
     type="{{type}}" />
@@ -41,19 +41,19 @@
   {% if required %}
   <input
     style="background-color:{{color.fields}};color:{{color.selection}}"
-    pattern="[a-zA-Z0-9\.\!-\?]+"
+    pattern="[a-z0-9\.\!-\?]+"
     max-length="23"
     required
     id="{{id}}" type="{{type}}" />
   {% else %}
   <input
     style="background-color:{{color.fields}};color:{{color.selection}}"
-    pattern="[a-zA-Z0-9\.\!-\?]+"
+    pattern="[a-z0-9\.\!-\?]+"
     max-length="23"
     id="{{id}}"
     type="{{type}}" />
   {% endif %}
-  <p style="font-size: 10px">Pattern: [a-zA-Z0-9\.\!-\?]+</p>
+  <p style="font-size: 10px">Pattern: [a-z0-9\.\!-\?]+</p>
 </fieldset>
 {% endmacro %}
 
