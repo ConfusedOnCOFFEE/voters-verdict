@@ -1,5 +1,5 @@
-#[cfg(feature = "db")]
-use crate::db::common::Query;
+#[cfg(feature = "file")]
+use crate::{common::IdGenerator, local::ToFile};
 use crate::{
     common::{
         Candidate, CastBallots, Criteria, Criterion, EmojiCategories, Empty, QueryableExt, Voting,
@@ -14,6 +14,8 @@ use rocket::{
 };
 use std::collections::BTreeMap;
 
+#[cfg(feature = "sqlx_sqlite")]
+use crate::db::common::Query;
 #[cfg(feature = "file")]
 #[rocket::async_trait]
 pub trait FromStorage: FromPersistence + Empty {
@@ -77,7 +79,7 @@ pub trait FromStorage:
 }
 #[cfg(feature = "file")]
 #[rocket::async_trait]
-pub trait ToStorage: ToPersistence + Serialize + IdGenerator {
+pub trait ToStorage: ToPersistence + Serialize + IdGenerator + ToFile {
     async fn save(&self) -> Result<String, VoteErrorKind> {
         match rocket::serde::json::to_string(&self) {
             Ok(stringified) => {
@@ -162,19 +164,3 @@ impl Path for Candidate {}
 impl Path for Criteria {}
 impl Path for Criterion {}
 impl Path for EmojiCategories {}
-
-impl QueryableExt for Votings {}
-impl QueryableExt for Voting {}
-impl QueryableExt for CastBallots {}
-impl QueryableExt for Candidate {}
-impl QueryableExt for Criteria {}
-impl QueryableExt for Criterion {}
-impl QueryableExt for EmojiCategories {}
-
-impl Query for Votings {}
-impl Query for Voting {}
-impl Query for CastBallots {}
-impl Query for Candidate {}
-impl Query for Criteria {}
-impl Query for Criterion {}
-impl Query for EmojiCategories {}

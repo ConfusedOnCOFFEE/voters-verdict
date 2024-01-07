@@ -131,7 +131,11 @@ pub trait ToFile: FileDir + IdGenerator + Selfaware {
             Err(e) => Err(e),
         }
     }
-    async fn save(&self, path: String, stringified: String) -> Result<String, VoteErrorKind> {
+    async fn save_to_file(
+        &self,
+        path: String,
+        stringified: String,
+    ) -> Result<String, VoteErrorKind> {
         let created_artifact = match File::open(&path).await {
             Ok(_f) => Err(VoteErrorKind::Conflict(self.get_type() + " already exist.")),
             Err(_) => self.create(path, stringified).await,
@@ -176,7 +180,7 @@ pub trait ToFile: FileDir + IdGenerator + Selfaware {
 
     #[cfg(not(test))]
     async fn update_index(&self) -> Result<String, VoteErrorKind> {
-        let index_file_path = self.get_full_path(true) + "/index.json";
+        let index_file_path = FileDir::get_full_path(self, true) + "/index.json";
         match File::open(&index_file_path).await {
             Ok(f) => {
                 let mut contents = String::new();

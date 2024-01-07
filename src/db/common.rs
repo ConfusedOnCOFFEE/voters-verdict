@@ -1,6 +1,12 @@
 #[cfg(feature = "diesel_sqlite")]
 use super::sqlite::{establish_connection, query_voting, EmptySelectable};
-use crate::{common::QueryableExt, error::VoteErrorKind};
+use crate::{
+    common::{
+        Candidate, CastBallots, Criteria, Criterion, EmojiCategories, Empty, QueryableExt, Voting,
+        Votings,
+    },
+    error::VoteErrorKind,
+};
 use rocket::{debug, error};
 use std::collections::BTreeMap;
 #[rocket::async_trait]
@@ -110,3 +116,19 @@ pub trait Query: QueryableExt + std::str::FromStr + std::marker::Sync {
         }
     }
 }
+
+impl QueryableExt for Votings {}
+impl QueryableExt for Voting {}
+impl QueryableExt for CastBallots {}
+impl QueryableExt for Candidate {}
+impl QueryableExt for Criteria {}
+impl QueryableExt for Criterion {}
+impl QueryableExt for EmojiCategories {}
+
+impl Query for Votings {}
+impl Query for Voting {}
+impl Query for CastBallots {}
+impl Query for Candidate {}
+impl Query for Criteria {}
+impl Query for Criterion {}
+impl Query for EmojiCategories {}

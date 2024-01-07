@@ -1,3 +1,6 @@
+use crate::common::{
+    Candidate, CastBallots, Criteria, Criterion, EmojiCategories, Voting, Votings,
+};
 use rocket::{
     debug, error,
     tokio::{fs::File, io::AsyncReadExt},

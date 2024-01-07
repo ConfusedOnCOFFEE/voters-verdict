@@ -3,10 +3,10 @@ use crate::{
     config::STORAGE_MODE,
     error::VoteErrorKind,
 };
+#[cfg(feature = "local")]
+use rocket::error;
 use rocket::{debug, serde::Deserialize};
 
-#[cfg(feature = "file")]
-use crate::local::{IsUniqueFile, ToFile};
 #[cfg(feature = "local")]
 use crate::{
     config::FILE_DIR,
@@ -49,7 +49,7 @@ impl PersistenceMode {
     #[cfg(feature = "local")]
     fn default_mode() -> Self {
         PersistenceMode::File(FileConfig {
-            dir: match std::env::var(FILEDIR) {
+            dir: match std::env::var(FILE_DIR) {
                 Ok(file_dir) => file_dir,
                 Err(_) => String::from("/tmp/"),
             },
@@ -114,7 +114,7 @@ impl From<&str> for PersistenceMode {
 }
 
 #[rocket::async_trait]
-#[cfg(feature = "local")]
+#[cfg(all(feature = "local", not(feature = "remote")))]
 pub trait Path: FileDir + IsUniqueFile {
     fn get_dir() -> &'static str {
         match PersistenceMode::detect_config_mode() {
@@ -140,9 +140,9 @@ pub trait Path: FileDir + IsUniqueFile {
     }
 }
 
-#[cfg(feature = "remote")]
+#[cfg(feature = "file")]
 #[rocket::async_trait]
-pub trait Path: FileDir {
+pub trait Path: FileDir + IsUniqueFile {
     fn get_dir() -> &'static str {
         match PersistenceMode::detect_config_mode() {
             #[cfg(feature = "local")]
@@ -158,7 +158,7 @@ pub trait Path: FileDir {
                 Err(_) => String::from("/tmp/"),
             },
         };
-        root_path + &<Self as FilePath>::get_dir()
+        root_path + &<Self as FileDir>::get_dir()
     }
 
     async fn is_unique(&self, id: &str) -> Result<String, VoteErrorKind> {
@@ -188,7 +188,7 @@ pub trait Path: Query + Selfaware {
     }
 }
 
-#[cfg(feature = "local")]
+#[cfg(all(not(feature = "file"), feature = "local"))]
 #[rocket::async_trait]
 pub trait ToPersistence: DirectoryIndex + Path + ToFile {
     async fn index(&self) -> Result<Vec<String>, String> {
@@ -201,7 +201,7 @@ pub trait ToPersistence: DirectoryIndex + Path + ToFile {
     }
 }
 
-#[cfg(feature = "remote")]
+#[cfg(all(not(feature = "file"), feature = "remove"))]
 #[rocket::async_trait]
 pub trait ToPersistence: RemoteIndex + Path + ToFile {
     async fn index(&self) -> Result<Vec<String>, String> {
@@ -214,11 +214,15 @@ pub trait ToPersistence: RemoteIndex + Path + ToFile {
 #[rocket::async_trait]
 pub trait ToPersistence: DirectoryIndex + RemoteIndex + Path + ToFile {
     async fn index(&self) -> Result<Vec<String>, String> {
-        let uri = self.get_full_path(true) + "/index.json";
+        let uri = FileDir::get_full_path(self, true) + "/index.json";
         match PersistenceMode::detect_config_mode() {
             PersistenceMode::File(_d) => self.read_index(&uri).await,
             PersistenceMode::Remote(_d) => self.prepare(&uri).await,
         }
+    }
+
+    async fn list(&self) -> Result<Vec<String>, String> {
+        self.list_dir().await
     }
 }
 
@@ -236,7 +240,7 @@ pub trait ToPersistence: Query + Selfaware + IdGenerator {
 #[cfg(feature = "file")]
 #[rocket::async_trait]
 pub trait FromPersistence: Path + for<'de> Deserialize<'de> {
-    async fn from_persistence(&self, path: &str, _internal: bool) -> String {
+    async fn from_persistence(&self, path: &str, internal: bool) -> String {
         match PersistenceMode::detect_config_mode() {
             #[cfg(feature = "local")]
             PersistenceMode::File(_d) => self.from_file(path).await,
@@ -245,12 +249,12 @@ pub trait FromPersistence: Path + for<'de> Deserialize<'de> {
                 if internal {
                     self.from_file(&path).await
                 } else {
-                    debug!("Full path: {:?}", self.get_full_path(true));
-                    match reqwest::get(self.get_full_path(true) + "/" + id + ".json").await {
+                    match reqwest::get(path).await {
                         Ok(r) => match r.text().await {
                             Ok(as_text) => as_text,
                             Err(e) => {
                                 error!("{:?}", e);
+
                                 String::from("{}")
                             }
                         },

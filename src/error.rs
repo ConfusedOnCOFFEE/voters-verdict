@@ -46,6 +46,7 @@ impl<'r> ToString for VoteErrorKind<'r> {
             VoteErrorKind::Conflict(e) => e.to_string(),
             VoteErrorKind::NotFound(e) => e.to_string(),
             VoteErrorKind::Unauthorized(e) => e.0.clone(),
+            #[cfg(feature = "sqlx_sqlite")]
             VoteErrorKind::DB(e) => e.to_string(),
             VoteErrorKind::Internal(e) => e.to_string(),
         }

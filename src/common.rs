@@ -184,6 +184,7 @@ impl From<Criterion> for VoteKind {
 pub struct Votings {
     pub votings: Vec<Voting>,
 }
+#[cfg(feature = "sqlx_sqlite")]
 impl Votings {
     fn values(&self) -> String {
         self.votings
@@ -316,6 +317,7 @@ pub struct Voting {
     pub styles: VotingStyles,
     pub invite_code: String,
 }
+#[cfg(feature = "sqlx_sqlite")]
 impl Voting {
     fn properties(in_parenthesis: bool) -> String {
         if in_parenthesis {
@@ -358,18 +360,19 @@ impl From<Vec<VotingTable>> for Votings {
     }
 }
 
-#[cfg(not(feature = "diesel_sqlite"))]
-#[derive(Debug, Serialize, PartialEq, Deserialize)]
-#[serde(crate = "rocket::serde")]
-pub struct VotingTable {
-    pub name: String,
-    pub expires_at: DateTime<Utc>,
-    pub created_at: DateTime<Utc>,
-    pub candidates: String,
-    pub categories: String,
-    pub styles: String,
-    pub invite_code: String,
-}
+// #[cfg(not(feature = "diesel_sqlite"))]
+// #[derive(Debug, Serialize, PartialEq, Deserialize)]
+// #[serde(crate = "rocket::serde")]
+// pub struct VotingTable {
+//     pub name: String,
+//     pub expires_at: DateTime<Utc>,
+//     pub created_at: DateTime<Utc>,
+//     pub candidates: String,
+//     pub categories: String,
+//     pub styles: String,
+//     pub invite_code: String,
+// }
+#[cfg(feature = "sqlx_sqlite")]
 impl VotingTable {
     fn get_name(&self) -> String {
         self.name.to_lowercase().to_owned()
@@ -393,6 +396,19 @@ impl VotingTable {
         .unwrap()
     }
 }
+#[cfg(feature = "sqlx_sqlite")]
+#[derive(Debug, Serialize, PartialEq, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct VotingTable {
+    pub name: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub candidates: String,
+    pub categories: String,
+    pub styles: String,
+    pub invite_code: String,
+}
+
 #[cfg(feature = "diesel_sqlite")]
 #[derive(Debug, Serialize, PartialEq, Deserialize, Queryable, Selectable, Insertable)]
 #[diesel(table_name = votings )]
@@ -470,6 +486,7 @@ impl std::str::FromStr for Voting {
         }
     }
 }
+#[cfg(feature = "sqlx_sqlite")]
 impl From<&VotingTable> for Voting {
     fn from(v: &VotingTable) -> Self {
         Self {
@@ -501,6 +518,7 @@ impl From<&VotingTable> for Voting {
         }
     }
 }
+#[cfg(feature = "sqlx_sqlite")]
 impl From<VotingTable> for Voting {
     fn from(v: VotingTable) -> Self {
         Self {
@@ -544,7 +562,7 @@ table! {
         invite_code -> Text,
     }
 }
-#[cfg(feature = "db")]
+#[cfg(feature = "sqlx_sqlite")]
 impl From<&Voting> for VotingTable {
     fn from(v: &Voting) -> Self {
         Self {
@@ -1174,6 +1192,7 @@ impl Criteria {
     fn properties(in_parenthesis: bool) -> String {
         Criterion::properties(in_parenthesis)
     }
+    #[cfg(feature = "sqlx_sqlite")]
     fn values(&self) -> String {
         self.criterias
             .iter()

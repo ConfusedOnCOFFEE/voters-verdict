@@ -8,6 +8,7 @@ use crate::{
     error::VoteErrorKind,
     persistence::ToPersistence,
     routes::API_BALLOTS,
+    serialize::ToStorage,
     validator::{compare_pattern_file_names, validate},
 };
 use chrono::prelude::*;
@@ -199,6 +200,7 @@ pub struct TableRow {
 #[cfg(not(feature = "diesel_sqlite"))]
 #[derive(Serialize, Debug, PartialEq, Clone, Deserialize)]
 #[serde(crate = "rocket::serde")]
+#[cfg(feature = "db")]
 pub struct BallotsTable {
     pub voting: String,
     pub voter: String,
@@ -212,6 +214,7 @@ pub struct BallotsTable {
 }
 #[derive(Serialize, Debug, PartialEq, Clone, Deserialize)]
 #[serde(crate = "rocket::serde")]
+#[cfg(feature = "db")]
 pub struct CompleteBallotsTable {
     pub categories: Vec<Criterion>,
     pub voting: String,
@@ -224,6 +227,7 @@ pub struct CompleteBallotsTable {
     votes: String,
     pub voted_on: DateTime<Utc>,
 }
+#[cfg(feature = "db")]
 impl BallotsTable {
     fn values(&self) -> String {
         format!(
@@ -240,8 +244,11 @@ impl BallotsTable {
         )
     }
 }
+#[cfg(feature = "db")]
 impl Query for BallotsTable {}
+#[cfg(feature = "db")]
 impl QueryableExt for BallotsTable {}
+#[cfg(feature = "db")]
 impl std::str::FromStr for BallotsTable {
     type Err = crate::error::FromErrorKind;
     fn from_str(v: &str) -> Result<Self, Self::Err> {
@@ -290,6 +297,7 @@ impl VVTable for BallotsTable {
         self.values()
     }
 }
+#[cfg(feature = "db")]
 impl Empty for BallotsTable {
     fn empty() -> Self {
         Self {
@@ -305,7 +313,7 @@ impl Empty for BallotsTable {
         }
     }
 }
-
+#[cfg(feature = "db")]
 impl IdGenerator for BallotsTable {
     fn get_id(&self) -> String {
         self.generate_id()
@@ -318,10 +326,15 @@ impl IdGenerator for BallotsTable {
             + &self.candidate.to_lowercase()
     }
 }
+#[cfg(feature = "db")]
 impl Fill for BallotsTable {}
+#[cfg(feature = "db")]
 impl crate::serialize::FromStorage for BallotsTable {}
+#[cfg(feature = "db")]
 impl crate::persistence::FromPersistence for BallotsTable {}
+#[cfg(feature = "db")]
 impl crate::persistence::Path for BallotsTable {}
+#[cfg(feature = "db")]
 impl Selfaware for BallotsTable {
     fn get_type(&self) -> String {
         String::from("CBallots")
